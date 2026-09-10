@@ -1,8 +1,7 @@
-use std::fmt;
-use std::fmt::Write as _;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+use crate::display::BoxedTensor;
 use crate::domain::{BoxDomain, Domain};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
@@ -12,18 +11,6 @@ pub trait Tensor {
     fn get(&self, index: &[usize]) -> f32;
 
     fn domain(&self) -> &dyn Domain;
-}
-
-/// A tensor whose domain is a box. Only these can be printed, since formatting
-/// walks a shape and visits every index of it.
-pub trait BoxedTensor: Tensor {
-    fn box_domain(&self) -> &BoxDomain;
-}
-
-/// Renders a boxed tensor. Every `Display` implementation below defers to this,
-/// and each is written for the boxed instantiation of its tensor only.
-pub fn format_boxed(tensor: &dyn BoxedTensor) -> String {
-    format_tensor(tensor.box_domain().shape(), &|index| tensor.get(index))
 }
 
 /// Checks that a mapping lands on the indices the underlying tensor reads,
@@ -73,12 +60,6 @@ impl BoxedTensor for Physical {
     }
 }
 
-impl fmt::Display for Physical {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
 // The domain is the mapping's own domain, so it is never passed in. The mapping
 // type is a parameter rather than always `dyn IndexMapping` so that composing
 // over a boxed mapping is known to give a boxed, printable tensor. Pass
@@ -112,12 +93,6 @@ impl<M: BoxedMapping + ?Sized> BoxedTensor for RightComposition<M> {
     }
 }
 
-impl<M: BoxedMapping + ?Sized> fmt::Display for RightComposition<M> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
 // Transforming the values leaves the index set alone, so the domain is the
 // underlying tensor's. Its type is a parameter so that a transform of a boxed
 // tensor is known to be boxed, and printable, in turn.
@@ -145,12 +120,6 @@ impl<T: Tensor + ?Sized> Tensor for LeftComposition<T> {
 impl<T: BoxedTensor + ?Sized> BoxedTensor for LeftComposition<T> {
     fn box_domain(&self) -> &BoxDomain {
         self.u.box_domain()
-    }
-}
-
-impl<T: BoxedTensor + ?Sized> fmt::Display for LeftComposition<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
     }
 }
 
@@ -236,96 +205,7 @@ impl<R: Reduction, M: BoxedPowersetMapping + ?Sized> BoxedTensor for ReductionTe
     }
 }
 
-impl<R: Reduction, M: BoxedPowersetMapping + ?Sized> fmt::Display for ReductionTensor<R, M> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
 pub type Sum<M> = ReductionTensor<SumReduction, M>;
 pub type Product<M> = ReductionTensor<ProductReduction, M>;
 pub type Sup<M> = ReductionTensor<SupReduction, M>;
 pub type Inf<M> = ReductionTensor<InfReduction, M>;
-
-fn format_tensor(shape: &[usize], accessor: &dyn Fn(&[usize]) -> f32) -> String {
-    if shape.is_empty() {
-        return format!("tensor({})", accessor(&[]));
-    }
-
-    let mut index = vec![0; shape.len()];
-    let width = max_width(shape, &mut index, 0, accessor);
-    let mut out = "tensor(".to_string();
-    // "tensor(" is 8 characters wide counting the opening bracket, so rows of
-    // the outermost dimension line up under it.
-    format_nested(
-        &mut out,
-        shape,
-        &mut index,
-        0,
-        &" ".repeat(8),
-        width,
-        accessor,
-    );
-    out.push(')');
-    out
-}
-
-fn max_width(
-    shape: &[usize],
-    index: &mut [usize],
-    dim: usize,
-    accessor: &dyn Fn(&[usize]) -> f32,
-) -> usize {
-    let mut width = 0;
-    for i in 0..shape[dim] {
-        index[dim] = i;
-        width = width.max(if dim == shape.len() - 1 {
-            accessor(index).to_string().len()
-        } else {
-            max_width(shape, index, dim + 1, accessor)
-        });
-    }
-    width
-}
-
-fn format_nested(
-    out: &mut String,
-    shape: &[usize],
-    index: &mut [usize],
-    dim: usize,
-    indent: &str,
-    width: usize,
-    accessor: &dyn Fn(&[usize]) -> f32,
-) {
-    let innermost = dim == shape.len() - 1;
-    out.push('[');
-    for i in 0..shape[dim] {
-        index[dim] = i;
-        if innermost {
-            let _ = write!(out, "{:>width$}", accessor(index));
-        } else {
-            format_nested(
-                out,
-                shape,
-                index,
-                dim + 1,
-                &format!("{indent} "),
-                width,
-                accessor,
-            );
-        }
-        if i + 1 < shape[dim] {
-            if innermost {
-                out.push_str(", ");
-            } else {
-                out.push_str(",\n");
-                // Separate blocks of rank 3 and above with a blank line.
-                if dim + 2 < shape.len() {
-                    out.push('\n');
-                }
-                out.push_str(indent);
-            }
-        }
-    }
-    out.push(']');
-}
