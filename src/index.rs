@@ -4,10 +4,15 @@ use std::hash::{Hash, Hasher};
 
 pub trait Index: Clone + Eq + Hash {}
 
-/// Index types constructible from a coordinate vector. Only these can be
-/// printed, since formatting walks a shape and rebuilds indices from it.
-pub trait FromCoords: Index {
+/// Index types made of integer coordinates. Only these can live in a box
+/// domain, since a box is described by a shape and membership is decided
+/// coordinate by coordinate.
+pub trait Coords: Index {
     fn from_coords(coords: &[usize]) -> Self;
+
+    fn ndim(&self) -> usize;
+
+    fn at(&self, i: usize) -> usize;
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -35,9 +40,17 @@ impl Multintdex {
 
 impl Index for Multintdex {}
 
-impl FromCoords for Multintdex {
+impl Coords for Multintdex {
     fn from_coords(coords: &[usize]) -> Self {
         Self::new(coords.to_vec())
+    }
+
+    fn ndim(&self) -> usize {
+        self.value.len()
+    }
+
+    fn at(&self, i: usize) -> usize {
+        self.value[i]
     }
 }
 
@@ -85,6 +98,26 @@ impl Intdex {
 }
 
 impl Index for Intdex {}
+
+impl Coords for Intdex {
+    fn from_coords(coords: &[usize]) -> Self {
+        assert!(
+            coords.len() == 1,
+            "an Intdex has exactly one coordinate, got {}",
+            coords.len()
+        );
+        Self::new(coords[0])
+    }
+
+    fn ndim(&self) -> usize {
+        1
+    }
+
+    fn at(&self, i: usize) -> usize {
+        assert!(i == 0, "index {i} out of range for Intdex");
+        self.value
+    }
+}
 
 impl From<usize> for Intdex {
     fn from(value: usize) -> Self {

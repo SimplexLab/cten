@@ -3,24 +3,43 @@ use std::fmt::Write as _;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::index::{FromCoords, Index, Intdex, Multintdex};
-use crate::mapping::{IndexMapping, PowersetMapping};
+use crate::domain::{BoxDomain, Domain};
+use crate::index::{Coords, Intdex, Multintdex};
+use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
-/// A mapping from an index set to a value set. The value set is fixed to the
-/// float numbers for now, for simplicity.
-pub trait Tensor<U: Index> {
+/// A mapping from an index set to a value set. The index set is the tensor's
+/// domain; the value set is fixed to the float numbers for now, for simplicity.
+pub trait Tensor<U: Coords> {
     fn get(&self, index: U) -> f32;
+
+    fn domain(&self) -> &dyn Domain<U>;
+}
+
+/// A tensor whose domain is a box. Only these can be printed, since formatting
+/// walks a shape and rebuilds indices from it.
+pub trait BoxedTensor<U: Coords>: Tensor<U> {
+    fn box_domain(&self) -> &BoxDomain<U>;
+}
+
+/// Renders a boxed tensor. Every `Display` implementation below defers to this,
+/// and each is written for the boxed instantiation of its tensor only.
+pub fn format_boxed<U: Coords, T: BoxedTensor<U> + ?Sized>(tensor: &T) -> String {
+    format_tensor(tensor.box_domain().shape(), &|coords| {
+        tensor.get(U::from_coords(coords))
+    })
 }
 
 pub type Vector = dyn Tensor<Intdex>;
 
 pub struct Physical {
     values: Vec<f32>,
+    domain: BoxDomain<Intdex>,
 }
 
 impl Physical {
     pub fn new(values: Vec<f32>) -> Self {
-        Self { values }
+        let domain = BoxDomain::new(vec![values.len()]);
+        Self { values, domain }
     }
 }
 
@@ -28,88 +47,144 @@ impl Tensor<Intdex> for Physical {
     fn get(&self, index: Intdex) -> f32 {
         self.values[index.get()]
     }
+
+    fn domain(&self) -> &dyn Domain<Intdex> {
+        &self.domain
+    }
+}
+
+impl BoxedTensor<Intdex> for Physical {
+    fn box_domain(&self) -> &BoxDomain<Intdex> {
+        &self.domain
+    }
 }
 
 impl fmt::Display for Physical {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let shape = [self.values.len()];
-        f.write_str(&format_tensor(&shape, &|index| self.values[index[0]]))
+        f.write_str(&format_boxed(self))
     }
 }
 
 // For now, the virtual index type is forced to be Multintdex.
 // TODO: relax that (different printing, no concept of shape, etc.)
-pub struct RightComposition<U: Index> {
+//
+// The domain is the mapping's own domain, so it is never passed in. The mapping
+// type is a parameter rather than always `dyn IndexMapping` so that composing
+// over a boxed mapping is known to give a boxed, printable tensor. Pass
+// `dyn BoxedMapping<Multintdex, U>` or `dyn IndexMapping<Multintdex, U>` for it
+// to erase the mapping.
+pub struct RightComposition<U: Coords, M: ?Sized> {
     u: Rc<dyn Tensor<U>>,
-    mapping: Rc<dyn IndexMapping<Multintdex, U>>,
-    shape: Vec<usize>,
+    mapping: Rc<M>,
 }
 
-impl<U: Index> RightComposition<U> {
-    pub fn new(
-        u: Rc<dyn Tensor<U>>,
-        mapping: Rc<dyn IndexMapping<Multintdex, U>>,
-        shape: Vec<usize>,
-    ) -> Self {
-        Self { u, mapping, shape }
+impl<U: Coords, M: IndexMapping<Multintdex, U> + ?Sized> RightComposition<U, M> {
+    pub fn new(u: Rc<dyn Tensor<U>>, mapping: Rc<M>) -> Self {
+        Self { u, mapping }
     }
 }
 
-impl<U: Index> Tensor<Multintdex> for RightComposition<U> {
+impl<U: Coords, M: IndexMapping<Multintdex, U> + ?Sized> Tensor<Multintdex>
+    for RightComposition<U, M>
+{
     fn get(&self, virtual_index: Multintdex) -> f32 {
         let underlying_index = self.mapping.map(virtual_index);
         self.u.get(underlying_index)
     }
+
+    fn domain(&self) -> &dyn Domain<Multintdex> {
+        self.mapping.domain()
+    }
 }
 
-impl<U: Index> fmt::Display for RightComposition<U> {
+impl<U: Coords, M: BoxedMapping<Multintdex, U> + ?Sized> BoxedTensor<Multintdex>
+    for RightComposition<U, M>
+{
+    fn box_domain(&self) -> &BoxDomain<Multintdex> {
+        self.mapping.box_domain()
+    }
+}
+
+impl<U: Coords, M: BoxedMapping<Multintdex, U> + ?Sized> fmt::Display for RightComposition<U, M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_tensor(&self.shape, &|index| {
-            self.get(Multintdex::from_coords(index))
-        }))
+        f.write_str(&format_boxed(self))
     }
 }
 
-pub struct LeftComposition<U: Index> {
-    u: Rc<dyn Tensor<U>>,
+// Transforming the values leaves the index set alone, so the domain is the
+// underlying tensor's. Its type is a parameter so that a transform of a boxed
+// tensor is known to be boxed, and printable, in turn.
+pub struct LeftComposition<U: Coords, T: ?Sized> {
+    u: Rc<T>,
     f: fn(f32) -> f32,
-    shape: Vec<usize>,
+    _marker: PhantomData<fn(U)>,
 }
 
-impl<U: Index> LeftComposition<U> {
-    pub fn new(u: Rc<dyn Tensor<U>>, f: fn(f32) -> f32, shape: Vec<usize>) -> Self {
-        Self { u, f, shape }
+impl<U: Coords, T: Tensor<U> + ?Sized> LeftComposition<U, T> {
+    pub fn new(u: Rc<T>, f: fn(f32) -> f32) -> Self {
+        Self {
+            u,
+            f,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<U: Index> Tensor<U> for LeftComposition<U> {
+impl<U: Coords, T: Tensor<U> + ?Sized> Tensor<U> for LeftComposition<U, T> {
     fn get(&self, index: U) -> f32 {
         (self.f)(self.u.get(index))
     }
+
+    fn domain(&self) -> &dyn Domain<U> {
+        self.u.domain()
+    }
 }
 
-impl<U: FromCoords> fmt::Display for LeftComposition<U> {
+impl<U: Coords, T: BoxedTensor<U> + ?Sized> BoxedTensor<U> for LeftComposition<U, T> {
+    fn box_domain(&self) -> &BoxDomain<U> {
+        self.u.box_domain()
+    }
+}
+
+impl<U: Coords, T: BoxedTensor<U> + ?Sized> fmt::Display for LeftComposition<U, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_tensor(&self.shape, &|index| {
-            self.get(U::from_coords(index))
-        }))
+        f.write_str(&format_boxed(self))
     }
 }
 
-/// Wrapper around a 1D Multintdex tensor making it an Intdex Tensor.
-pub struct Intdexed {
+/// Wrapper around a 1D Multintdex tensor making it an Intdex Tensor. Its domain
+/// has to be given explicitly: the wrapped tensor only exposes a domain over
+/// Multintdex, which is not a domain over Intdex.
+pub struct Intdexed<D> {
     u: Rc<dyn Tensor<Multintdex>>,
+    domain: D,
 }
 
-impl Intdexed {
-    pub fn new(u: Rc<dyn Tensor<Multintdex>>) -> Self {
-        Self { u }
+impl<D: Domain<Intdex>> Intdexed<D> {
+    pub fn new(u: Rc<dyn Tensor<Multintdex>>, domain: D) -> Self {
+        Self { u, domain }
     }
 }
 
-impl Tensor<Intdex> for Intdexed {
+impl<D: Domain<Intdex>> Tensor<Intdex> for Intdexed<D> {
     fn get(&self, index: Intdex) -> f32 {
         self.u.get(Multintdex::new(vec![index.get()]))
+    }
+
+    fn domain(&self) -> &dyn Domain<Intdex> {
+        &self.domain
+    }
+}
+
+impl BoxedTensor<Intdex> for Intdexed<BoxDomain<Intdex>> {
+    fn box_domain(&self) -> &BoxDomain<Intdex> {
+        &self.domain
+    }
+}
+
+impl fmt::Display for Intdexed<BoxDomain<Intdex>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format_boxed(self))
     }
 }
 
@@ -154,29 +229,30 @@ impl Reduction for InfReduction {
     }
 }
 
-pub struct ReductionTensor<V: Index, U: Index, R: Reduction> {
+// As in a right composition, the domain is the mapping's own domain, and the
+// mapping type is a parameter so that reducing over a boxed mapping is known to
+// give a boxed, printable tensor.
+pub struct ReductionTensor<V: Coords, U: Coords, R: Reduction, M: ?Sized> {
     u: Rc<dyn Tensor<U>>,
-    mapping: Rc<dyn PowersetMapping<V, U>>,
-    shape: Vec<usize>,
+    mapping: Rc<M>,
     _marker: PhantomData<fn(V) -> R>,
 }
 
-impl<V: Index, U: Index, R: Reduction> ReductionTensor<V, U, R> {
-    pub fn new(
-        u: Rc<dyn Tensor<U>>,
-        mapping: Rc<dyn PowersetMapping<V, U>>,
-        shape: Vec<usize>,
-    ) -> Self {
+impl<V: Coords, U: Coords, R: Reduction, M: PowersetMapping<V, U> + ?Sized>
+    ReductionTensor<V, U, R, M>
+{
+    pub fn new(u: Rc<dyn Tensor<U>>, mapping: Rc<M>) -> Self {
         Self {
             u,
             mapping,
-            shape,
             _marker: PhantomData,
         }
     }
 }
 
-impl<V: Index, U: Index, R: Reduction> Tensor<V> for ReductionTensor<V, U, R> {
+impl<V: Coords, U: Coords, R: Reduction, M: PowersetMapping<V, U> + ?Sized> Tensor<V>
+    for ReductionTensor<V, U, R, M>
+{
     fn get(&self, index: V) -> f32 {
         let indices = self.mapping.map(index);
         let mut result = R::NEUTRAL;
@@ -185,20 +261,32 @@ impl<V: Index, U: Index, R: Reduction> Tensor<V> for ReductionTensor<V, U, R> {
         }
         result
     }
-}
 
-impl<V: FromCoords, U: Index, R: Reduction> fmt::Display for ReductionTensor<V, U, R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_tensor(&self.shape, &|index| {
-            self.get(V::from_coords(index))
-        }))
+    fn domain(&self) -> &dyn Domain<V> {
+        self.mapping.domain()
     }
 }
 
-pub type Sum<V, U> = ReductionTensor<V, U, SumReduction>;
-pub type Product<V, U> = ReductionTensor<V, U, ProductReduction>;
-pub type Sup<V, U> = ReductionTensor<V, U, SupReduction>;
-pub type Inf<V, U> = ReductionTensor<V, U, InfReduction>;
+impl<V: Coords, U: Coords, R: Reduction, M: BoxedPowersetMapping<V, U> + ?Sized> BoxedTensor<V>
+    for ReductionTensor<V, U, R, M>
+{
+    fn box_domain(&self) -> &BoxDomain<V> {
+        self.mapping.box_domain()
+    }
+}
+
+impl<V: Coords, U: Coords, R: Reduction, M: BoxedPowersetMapping<V, U> + ?Sized> fmt::Display
+    for ReductionTensor<V, U, R, M>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format_boxed(self))
+    }
+}
+
+pub type Sum<V, U, M> = ReductionTensor<V, U, SumReduction, M>;
+pub type Product<V, U, M> = ReductionTensor<V, U, ProductReduction, M>;
+pub type Sup<V, U, M> = ReductionTensor<V, U, SupReduction, M>;
+pub type Inf<V, U, M> = ReductionTensor<V, U, InfReduction, M>;
 
 fn format_tensor(shape: &[usize], accessor: &dyn Fn(&[usize]) -> f32) -> String {
     if shape.is_empty() {

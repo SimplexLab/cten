@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use bten::{
-    COO, Diagonal, EmptyMapping, IndexMapping, Inf, Intdex, Intdexed, LeftComposition, Multintdex,
-    Physical, Powerset, Product, RightComposition, Stride, Sum, Sup, Tensor,
+    BoxDomain, COO, Diagonal, EmptyMapping, Inf, Intdex, Intdexed, LeftComposition, Multintdex,
+    Physical, Powerset, PowersetMapping, Product, RightComposition, Stride, Sum, Sup, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -20,14 +20,17 @@ fn collect_2d(tensor: &dyn Tensor<Multintdex>, rows: usize, cols: usize) -> Vec<
 }
 
 fn coo_2d() -> Rc<COO> {
-    Rc::new(COO::new(vec![
-        vec![0, 0],
-        vec![0, 3],
-        vec![4, 2],
-        vec![5, 4],
-        vec![1, 3],
-        vec![2, 0],
-    ]))
+    Rc::new(COO::new(
+        BoxDomain::new(vec![6, 5]),
+        vec![
+            vec![0, 0],
+            vec![0, 3],
+            vec![4, 2],
+            vec![5, 4],
+            vec![1, 3],
+            vec![2, 0],
+        ],
+    ))
 }
 
 #[test]
@@ -46,8 +49,10 @@ fn physical_rejects_out_of_bounds_indices() {
 
 #[test]
 fn right_composition_reads_through_a_stride() {
-    let strided =
-        RightComposition::<Intdex>::new(physical(), Rc::new(Stride::new(vec![1, 3])), vec![3, 2]);
+    let strided = RightComposition::<Intdex, _>::new(
+        physical(),
+        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+    );
 
     assert_eq!(
         collect_2d(&strided, 3, 2),
@@ -57,8 +62,10 @@ fn right_composition_reads_through_a_stride() {
 
 #[test]
 fn a_zero_stride_broadcasts_along_its_axis() {
-    let repeated =
-        RightComposition::<Intdex>::new(physical(), Rc::new(Stride::new(vec![0, 1])), vec![4, 6]);
+    let repeated = RightComposition::<Intdex, _>::new(
+        physical(),
+        Rc::new(Stride::new(BoxDomain::new(vec![4, 6]), vec![0, 1])),
+    );
 
     let rows = collect_2d(&repeated, 4, 6);
     for row in &rows {
@@ -68,12 +75,11 @@ fn a_zero_stride_broadcasts_along_its_axis() {
 
 #[test]
 fn left_composition_transforms_values_pointwise() {
-    let strided: Rc<RightComposition<Intdex>> = Rc::new(RightComposition::new(
+    let strided: Rc<RightComposition<Intdex, Stride>> = Rc::new(RightComposition::new(
         physical(),
-        Rc::new(Stride::new(vec![1, 3])),
-        vec![3, 2],
+        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
     ));
-    let squared = LeftComposition::<Multintdex>::new(strided, |x| x * x, vec![3, 2]);
+    let squared = LeftComposition::<Multintdex, _>::new(strided, |x| x * x);
 
     assert_eq!(
         collect_2d(&squared, 3, 2),
@@ -83,13 +89,12 @@ fn left_composition_transforms_values_pointwise() {
 
 #[test]
 fn intdexed_narrows_a_one_dimensional_multintdex_tensor() {
-    let coo_vector = Rc::new(COO::new(vec![vec![0], vec![4], vec![5]]));
-    let sparse = Rc::new(Sum::<Multintdex, Intdex>::new(
-        physical(),
-        coo_vector,
-        vec![6],
+    let coo_vector = Rc::new(COO::new(
+        BoxDomain::new(vec![6]),
+        vec![vec![0], vec![4], vec![5]],
     ));
-    let narrowed = Intdexed::new(sparse.clone());
+    let sparse = Rc::new(Sum::<Multintdex, Intdex, _>::new(physical(), coo_vector));
+    let narrowed = Intdexed::new(sparse.clone(), BoxDomain::new(vec![6]));
 
     for i in 0..6 {
         assert_eq!(
@@ -105,7 +110,7 @@ fn intdexed_narrows_a_one_dimensional_multintdex_tensor() {
 
 #[test]
 fn sum_over_a_coo_pattern_scatters_the_stored_values() {
-    let sparse = Sum::<Multintdex, Intdex>::new(physical(), coo_2d(), vec![6, 5]);
+    let sparse = Sum::<Multintdex, Intdex, _>::new(physical(), coo_2d());
 
     assert_eq!(
         collect_2d(&sparse, 6, 5),
@@ -124,10 +129,10 @@ fn sum_over_a_coo_pattern_scatters_the_stored_values() {
 fn each_reduction_falls_back_to_its_neutral_element() {
     let off_support = Multintdex::from([3, 3]);
 
-    let sum = Sum::<Multintdex, Intdex>::new(physical(), coo_2d(), vec![6, 5]);
-    let product = Product::<Multintdex, Intdex>::new(physical(), coo_2d(), vec![6, 5]);
-    let sup = Sup::<Multintdex, Intdex>::new(physical(), coo_2d(), vec![6, 5]);
-    let inf = Inf::<Multintdex, Intdex>::new(physical(), coo_2d(), vec![6, 5]);
+    let sum = Sum::<Multintdex, Intdex, _>::new(physical(), coo_2d());
+    let product = Product::<Multintdex, Intdex, _>::new(physical(), coo_2d());
+    let sup = Sup::<Multintdex, Intdex, _>::new(physical(), coo_2d());
+    let inf = Inf::<Multintdex, Intdex, _>::new(physical(), coo_2d());
 
     assert_eq!(sum.get(off_support.clone()), 0.0);
     assert_eq!(product.get(off_support.clone()), 1.0);
@@ -140,14 +145,19 @@ fn each_reduction_falls_back_to_its_neutral_element() {
 // These patterns deliberately store several positions at one coordinate.
 #[test]
 fn reductions_accumulate_over_every_matching_position() {
-    let overlapping = || Rc::new(COO::new(vec![vec![1, 1], vec![1, 1], vec![1, 1]]));
+    let overlapping = || {
+        Rc::new(COO::new(
+            BoxDomain::new(vec![2, 2]),
+            vec![vec![1, 1], vec![1, 1], vec![1, 1]],
+        ))
+    };
     let values = || Rc::new(Physical::new(vec![2.0, 3.0, 4.0]));
     let at = Multintdex::from([1, 1]);
 
-    let sum = Sum::<Multintdex, Intdex>::new(values(), overlapping(), vec![2, 2]);
-    let product = Product::<Multintdex, Intdex>::new(values(), overlapping(), vec![2, 2]);
-    let sup = Sup::<Multintdex, Intdex>::new(values(), overlapping(), vec![2, 2]);
-    let inf = Inf::<Multintdex, Intdex>::new(values(), overlapping(), vec![2, 2]);
+    let sum = Sum::<Multintdex, Intdex, _>::new(values(), overlapping());
+    let product = Product::<Multintdex, Intdex, _>::new(values(), overlapping());
+    let sup = Sup::<Multintdex, Intdex, _>::new(values(), overlapping());
+    let inf = Inf::<Multintdex, Intdex, _>::new(values(), overlapping());
 
     assert_eq!(sum.get(at.clone()), 9.0);
     assert_eq!(product.get(at.clone()), 24.0);
@@ -157,8 +167,8 @@ fn reductions_accumulate_over_every_matching_position() {
 
 #[test]
 fn a_partial_coo_entry_matches_every_index_sharing_its_prefix() {
-    let row_pattern = Rc::new(COO::new(vec![vec![2]]));
-    let sum = Sum::<Multintdex, Intdex>::new(physical(), row_pattern, vec![4, 3]);
+    let row_pattern = Rc::new(COO::new(BoxDomain::new(vec![4, 3]), vec![vec![2]]));
+    let sum = Sum::<Multintdex, Intdex, _>::new(physical(), row_pattern);
 
     assert_eq!(
         collect_2d(&sum, 4, 3),
@@ -173,7 +183,10 @@ fn a_partial_coo_entry_matches_every_index_sharing_its_prefix() {
 
 #[test]
 fn diagonal_reduction_builds_a_diagonal_matrix() {
-    let diag = Sum::<Multintdex, Intdex>::new(physical(), Rc::new(Diagonal::new()), vec![6, 6]);
+    let diag = Sum::<Multintdex, Intdex, _>::new(
+        physical(),
+        Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6]))),
+    );
 
     for i in 0..6 {
         for j in 0..6 {
@@ -185,7 +198,10 @@ fn diagonal_reduction_builds_a_diagonal_matrix() {
 
 #[test]
 fn diagonal_reduction_generalises_to_rank_three() {
-    let diag = Sum::<Multintdex, Intdex>::new(physical(), Rc::new(Diagonal::new()), vec![6, 6, 6]);
+    let diag = Sum::<Multintdex, Intdex, _>::new(
+        physical(),
+        Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6, 6]))),
+    );
 
     assert_eq!(diag.get(Multintdex::from([2, 2, 2])), 3.0);
     assert_eq!(diag.get(Multintdex::from([2, 2, 1])), 0.0);
@@ -198,17 +214,20 @@ fn diagonal_reduction_generalises_to_rank_three() {
 #[test]
 fn empty_mapping_under_a_product_yields_ones_from_an_empty_store() {
     let empty = Rc::new(Physical::new(vec![]));
-    let ones = Rc::new(Product::<Intdex, Intdex>::new(
+    let ones = Rc::new(Product::<Intdex, Intdex, _>::new(
         empty,
-        Rc::new(EmptyMapping::<Intdex, Intdex>::new()),
-        vec![6],
+        Rc::new(EmptyMapping::<Intdex, Intdex>::new(
+            BoxDomain::new(vec![6]),
+            BoxDomain::new(vec![0]),
+        )),
     ));
 
     for i in 0..6 {
         assert_eq!(ones.get(Intdex::new(i)), 1.0);
     }
 
-    let identity = Sum::<Multintdex, Intdex>::new(ones, Rc::new(Diagonal::new()), vec![6, 6]);
+    let identity =
+        Sum::<Multintdex, Intdex, _>::new(ones, Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6]))));
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { 1.0 } else { 0.0 };
@@ -219,25 +238,19 @@ fn empty_mapping_under_a_product_yields_ones_from_an_empty_store() {
 
 #[test]
 fn compositions_nest_to_arbitrary_depth() {
-    let sparse = Rc::new(Sum::<Multintdex, Intdex>::new(
+    let sparse = Rc::new(Sum::<Multintdex, Intdex, _>::new(
         physical(),
-        Rc::new(COO::new(vec![
-            vec![0],
-            vec![4],
-            vec![5],
-            vec![1],
-            vec![10],
-            vec![12],
-        ])),
-        vec![13],
+        Rc::new(COO::new(
+            BoxDomain::new(vec![13]),
+            vec![vec![0], vec![4], vec![5], vec![1], vec![10], vec![12]],
+        )),
     ));
-    let narrowed = Rc::new(Intdexed::new(sparse));
-    let repeated = Rc::new(RightComposition::<Intdex>::new(
+    let narrowed = Rc::new(Intdexed::new(sparse, BoxDomain::new(vec![13])));
+    let repeated = Rc::new(RightComposition::<Intdex, _>::new(
         narrowed,
-        Rc::new(Stride::new(vec![0, 1])),
-        vec![10, 13],
+        Rc::new(Stride::new(BoxDomain::new(vec![10, 13]), vec![0, 1])),
     ));
-    let squared = LeftComposition::<Multintdex>::new(repeated, |x| x * x, vec![10, 13]);
+    let squared = LeftComposition::<Multintdex, _>::new(repeated, |x| x * x);
 
     let expected: Vec<f32> = [
         1.0, 4.0, 0.0, 0.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 5.0, 0.0, 6.0,
@@ -253,7 +266,7 @@ fn compositions_nest_to_arbitrary_depth() {
 
 #[test]
 fn a_powerset_mapping_can_be_used_directly() {
-    let diagonal = Diagonal::new();
+    let diagonal = Diagonal::new(BoxDomain::new(vec![6, 6]));
     let selected: Powerset<Intdex> = diagonal.map(Multintdex::from([4, 4]));
 
     assert_eq!(selected.size(), 1);
