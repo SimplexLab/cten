@@ -1,46 +1,50 @@
+use std::collections::HashSet;
+
 use crate::domain::{BoxDomain, Domain};
-use crate::index::{Coords, Intdex, Multintdex, Powerset};
+
+/// A set of indices, as returned by a `PowersetMapping`.
+pub type Powerset = HashSet<Vec<usize>>;
 
 /// A mapping between two index sets, from its domain to its codomain.
-pub trait IndexMapping<V: Coords, U: Coords> {
-    fn map(&self, index: V) -> U;
+pub trait IndexMapping {
+    fn map(&self, index: &[usize]) -> Vec<usize>;
 
-    fn domain(&self) -> &dyn Domain<V>;
+    fn domain(&self) -> &dyn Domain;
 
-    fn codomain(&self) -> &dyn Domain<U>;
+    fn codomain(&self) -> &dyn Domain;
 }
 
 /// A mapping whose domain is a box. Composing a tensor over one of these gives
 /// a boxed tensor, hence a printable one.
-pub trait BoxedMapping<V: Coords, U: Coords>: IndexMapping<V, U> {
-    fn box_domain(&self) -> &BoxDomain<V>;
+pub trait BoxedMapping: IndexMapping {
+    fn box_domain(&self) -> &BoxDomain;
 }
 
 /// A mapping sending each index of its domain to a set of indices of its
 /// codomain. Note that the codomain is the set the returned indices are drawn
 /// from, not its powerset.
-pub trait PowersetMapping<V: Coords, U: Coords> {
-    fn map(&self, index: V) -> Powerset<U>;
+pub trait PowersetMapping {
+    fn map(&self, index: &[usize]) -> Powerset;
 
-    fn domain(&self) -> &dyn Domain<V>;
+    fn domain(&self) -> &dyn Domain;
 
-    fn codomain(&self) -> &dyn Domain<U>;
+    fn codomain(&self) -> &dyn Domain;
 }
 
 /// A powerset mapping whose domain is a box. Reducing over one of these gives a
 /// boxed tensor, hence a printable one.
-pub trait BoxedPowersetMapping<V: Coords, U: Coords>: PowersetMapping<V, U> {
-    fn box_domain(&self) -> &BoxDomain<V>;
+pub trait BoxedPowersetMapping: PowersetMapping {
+    fn box_domain(&self) -> &BoxDomain;
 }
 
 pub struct Stride {
-    domain: BoxDomain<Multintdex>,
-    codomain: BoxDomain<Intdex>,
+    domain: BoxDomain,
+    codomain: BoxDomain,
     strides: Vec<usize>,
 }
 
 impl Stride {
-    pub fn new(domain: BoxDomain<Multintdex>, strides: Vec<usize>) -> Self {
+    pub fn new(domain: BoxDomain, strides: Vec<usize>) -> Self {
         assert_eq!(
             domain.ndim(),
             strides.len(),
@@ -71,69 +75,69 @@ fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
         .sum::<usize>()
 }
 
-impl IndexMapping<Multintdex, Intdex> for Stride {
-    fn map(&self, index: Multintdex) -> Intdex {
+impl IndexMapping for Stride {
+    fn map(&self, index: &[usize]) -> Vec<usize> {
         let mut result = 0;
-        for (i, stride) in self.strides.iter().enumerate() {
-            result += index.at(i) * stride;
+        for (coord, stride) in index.iter().zip(&self.strides) {
+            result += coord * stride;
         }
-        Intdex::new(result)
+        vec![result]
     }
 
-    fn domain(&self) -> &dyn Domain<Multintdex> {
+    fn domain(&self) -> &dyn Domain {
         &self.domain
     }
 
-    fn codomain(&self) -> &dyn Domain<Intdex> {
+    fn codomain(&self) -> &dyn Domain {
         &self.codomain
     }
 }
 
-impl BoxedMapping<Multintdex, Intdex> for Stride {
-    fn box_domain(&self) -> &BoxDomain<Multintdex> {
+impl BoxedMapping for Stride {
+    fn box_domain(&self) -> &BoxDomain {
         &self.domain
     }
 }
 
-pub struct EmptyMapping<V: Coords, U: Coords> {
-    domain: BoxDomain<V>,
-    codomain: BoxDomain<U>,
+pub struct EmptyMapping {
+    domain: BoxDomain,
+    codomain: BoxDomain,
 }
 
-impl<V: Coords, U: Coords> EmptyMapping<V, U> {
-    pub fn new(domain: BoxDomain<V>, codomain: BoxDomain<U>) -> Self {
+impl EmptyMapping {
+    pub fn new(domain: BoxDomain, codomain: BoxDomain) -> Self {
         Self { domain, codomain }
     }
 }
 
-impl<V: Coords, U: Coords> PowersetMapping<V, U> for EmptyMapping<V, U> {
-    fn map(&self, _index: V) -> Powerset<U> {
+impl PowersetMapping for EmptyMapping {
+    fn map(&self, _index: &[usize]) -> Powerset {
         Powerset::new()
     }
 
-    fn domain(&self) -> &dyn Domain<V> {
+    fn domain(&self) -> &dyn Domain {
         &self.domain
     }
 
-    fn codomain(&self) -> &dyn Domain<U> {
+    fn codomain(&self) -> &dyn Domain {
         &self.codomain
     }
 }
 
-impl<V: Coords, U: Coords> BoxedPowersetMapping<V, U> for EmptyMapping<V, U> {
-    fn box_domain(&self) -> &BoxDomain<V> {
+impl BoxedPowersetMapping for EmptyMapping {
+    fn box_domain(&self) -> &BoxDomain {
         &self.domain
     }
 }
 
 pub struct COO {
-    domain: BoxDomain<Multintdex>,
-    codomain: BoxDomain<Intdex>,
+    domain: BoxDomain,
+    codomain: BoxDomain,
     inverse_coords: Vec<Vec<usize>>,
 }
 
 impl COO {
-    pub fn new(domain: BoxDomain<Multintdex>, inverse_coords: Vec<Vec<usize>>) -> Self {
+    pub fn new(domain: BoxDomain, inverse_coords: Vec<Vec<usize>>) -> Self {
         let codomain = BoxDomain::new(vec![inverse_coords.len()]);
         Self {
             domain,
@@ -147,43 +151,43 @@ impl COO {
     }
 }
 
-impl PowersetMapping<Multintdex, Intdex> for COO {
-    fn map(&self, index: Multintdex) -> Powerset<Intdex> {
+impl PowersetMapping for COO {
+    fn map(&self, index: &[usize]) -> Powerset {
         let mut result = Powerset::new();
         for (j, coords) in self.inverse_coords.iter().enumerate() {
             let matches = coords
                 .iter()
                 .enumerate()
-                .all(|(i, coord)| *coord == index.at(i));
+                .all(|(i, coord)| *coord == index[i]);
             if matches {
-                result.insert(Intdex::new(j));
+                result.insert(vec![j]);
             }
         }
         result
     }
 
-    fn domain(&self) -> &dyn Domain<Multintdex> {
+    fn domain(&self) -> &dyn Domain {
         &self.domain
     }
 
-    fn codomain(&self) -> &dyn Domain<Intdex> {
+    fn codomain(&self) -> &dyn Domain {
         &self.codomain
     }
 }
 
-impl BoxedPowersetMapping<Multintdex, Intdex> for COO {
-    fn box_domain(&self) -> &BoxDomain<Multintdex> {
+impl BoxedPowersetMapping for COO {
+    fn box_domain(&self) -> &BoxDomain {
         &self.domain
     }
 }
 
 pub struct Diagonal {
-    domain: BoxDomain<Multintdex>,
-    codomain: BoxDomain<Intdex>,
+    domain: BoxDomain,
+    codomain: BoxDomain,
 }
 
 impl Diagonal {
-    pub fn new(domain: BoxDomain<Multintdex>) -> Self {
+    pub fn new(domain: BoxDomain) -> Self {
         // Only indices repeated along every dimension are hit, so the diagonal
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
@@ -194,30 +198,30 @@ impl Diagonal {
     }
 }
 
-impl PowersetMapping<Multintdex, Intdex> for Diagonal {
-    fn map(&self, index: Multintdex) -> Powerset<Intdex> {
+impl PowersetMapping for Diagonal {
+    fn map(&self, index: &[usize]) -> Powerset {
         let mut result = Powerset::new();
-        let first = index.at(0);
-        for i in 0..index.ndim() {
-            if index.at(i) != first {
+        let first = index[0];
+        for coord in index {
+            if *coord != first {
                 return result;
             }
         }
-        result.insert(Intdex::new(first));
+        result.insert(vec![first]);
         result
     }
 
-    fn domain(&self) -> &dyn Domain<Multintdex> {
+    fn domain(&self) -> &dyn Domain {
         &self.domain
     }
 
-    fn codomain(&self) -> &dyn Domain<Intdex> {
+    fn codomain(&self) -> &dyn Domain {
         &self.codomain
     }
 }
 
-impl BoxedPowersetMapping<Multintdex, Intdex> for Diagonal {
-    fn box_domain(&self) -> &BoxDomain<Multintdex> {
+impl BoxedPowersetMapping for Diagonal {
+    fn box_domain(&self) -> &BoxDomain {
         &self.domain
     }
 }

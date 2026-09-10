@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use bten::{
-    BoxDomain, COO, Diagonal, Intdex, Multintdex, Physical, RightComposition, Stride, Sum, Sup,
-    Tensor,
-};
+use bten::{BoxDomain, COO, Diagonal, Physical, RightComposition, Stride, Sum, Sup, Tensor};
 
 fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
@@ -16,7 +13,7 @@ fn a_physical_vector_prints_flat() {
 
 #[test]
 fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
-    let strided = RightComposition::<Intdex, _>::new(
+    let strided = RightComposition::new(
         physical(),
         Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
     );
@@ -30,7 +27,7 @@ fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
 #[test]
 fn values_are_right_aligned_to_a_common_width() {
     let wide = Rc::new(Physical::new(vec![1.0, 16.0, 4.0, 25.0]));
-    let strided = RightComposition::<Intdex, _>::new(
+    let strided = RightComposition::new(
         wide,
         Rc::new(Stride::new(BoxDomain::new(vec![2, 2]), vec![1, 2])),
     );
@@ -44,7 +41,7 @@ fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
         BoxDomain::new(vec![2, 2]),
         vec![vec![0, 0], vec![1, 1]],
     ));
-    let sup = Sup::<Multintdex, Intdex, _>::new(physical(), coo);
+    let sup = Sup::new(physical(), coo);
 
     assert_eq!(
         sup.to_string(),
@@ -54,7 +51,7 @@ fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
 
 #[test]
 fn rank_three_tensors_separate_blocks_with_a_blank_line() {
-    let diag = Sum::<Multintdex, Intdex, _>::new(
+    let diag = Sum::new(
         physical(),
         Rc::new(Diagonal::new(BoxDomain::new(vec![2, 2, 2]))),
     );
@@ -73,7 +70,7 @@ fn rank_three_tensors_separate_blocks_with_a_blank_line() {
 
 #[test]
 fn display_agrees_with_direct_lookups() {
-    let sparse = Sum::<Multintdex, Intdex, _>::new(
+    let sparse = Sum::new(
         physical(),
         Rc::new(COO::new(
             BoxDomain::new(vec![2, 3]),
@@ -84,7 +81,7 @@ fn display_agrees_with_direct_lookups() {
     let rendered = sparse.to_string();
     for i in 0..2 {
         for j in 0..3 {
-            let value = sparse.get(Multintdex::from([i, j]));
+            let value = sparse.get(&[i, j]);
             assert!(
                 rendered.contains(&value.to_string()),
                 "{rendered} is missing the value at ({i}, {j})"

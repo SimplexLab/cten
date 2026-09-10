@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, COO, Diagonal, EmptyMapping, Intdex, Intdexed, LeftComposition, Multintdex,
-    Physical, Product, RightComposition, Stride, Sum, Sup, Tensor,
+    BoxDomain, COO, Diagonal, EmptyMapping, LeftComposition, Physical, Product, RightComposition,
+    Stride, Sum, Sup, Tensor,
 };
 
 fn square(x: f32) -> f32 {
@@ -30,51 +30,26 @@ fn main() {
     ));
     let diagonalize_2d = Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6])));
     let diagonalize_3d = Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6, 6])));
-    let empty_map = Rc::new(EmptyMapping::<Intdex, Intdex>::new(
+    let empty_map = Rc::new(EmptyMapping::new(
         BoxDomain::new(vec![6]),
         BoxDomain::new(vec![0]),
     ));
 
     // Tensors
     let physical = Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-    let strided = Rc::new(RightComposition::<Intdex, _>::new(physical.clone(), stride));
-    let sparse_coo_vector = Rc::new(Sum::<Multintdex, Intdex, _>::new(
-        physical.clone(),
-        coo_vector,
-    ));
-    let intdexed_sparse_coo_vector = Rc::new(Intdexed::new(
-        sparse_coo_vector.clone(),
-        BoxDomain::new(vec![13]),
-    ));
-    let repeated_sparse = Rc::new(RightComposition::<Intdex, _>::new(
-        intdexed_sparse_coo_vector,
-        repeat,
-    ));
-    let sparse_coo = Rc::new(Sum::<Multintdex, Intdex, _>::new(
-        physical.clone(),
-        coo.clone(),
-    ));
-    let prod_coo = Rc::new(Product::<Multintdex, Intdex, _>::new(
-        physical.clone(),
-        coo.clone(),
-    ));
-    let sup_coo = Rc::new(Sup::<Multintdex, Intdex, _>::new(physical.clone(), coo));
-    let diag2d = Rc::new(Sum::<Multintdex, Intdex, _>::new(
-        physical.clone(),
-        diagonalize_2d.clone(),
-    ));
-    let diag3d = Rc::new(Sum::<Multintdex, Intdex, _>::new(physical, diagonalize_3d));
+    let strided = Rc::new(RightComposition::new(physical.clone(), stride));
+    let sparse_coo_vector = Rc::new(Sum::new(physical.clone(), coo_vector));
+    let repeated_sparse = Rc::new(RightComposition::new(sparse_coo_vector.clone(), repeat));
+    let sparse_coo = Rc::new(Sum::new(physical.clone(), coo.clone()));
+    let prod_coo = Rc::new(Product::new(physical.clone(), coo.clone()));
+    let sup_coo = Rc::new(Sup::new(physical.clone(), coo));
+    let diag2d = Rc::new(Sum::new(physical.clone(), diagonalize_2d.clone()));
+    let diag3d = Rc::new(Sum::new(physical, diagonalize_3d));
     let empty = Rc::new(Physical::new(vec![]));
-    let ones = Rc::new(Product::<Intdex, Intdex, _>::new(empty, empty_map));
-    let identity = Rc::new(Sum::<Multintdex, Intdex, _>::new(ones, diagonalize_2d));
-    let strided_squared = Rc::new(LeftComposition::<Multintdex, _>::new(
-        strided.clone(),
-        square,
-    ));
-    let sparse_coo_squared = Rc::new(LeftComposition::<Multintdex, _>::new(
-        sparse_coo.clone(),
-        square,
-    ));
+    let ones = Rc::new(Product::new(empty, empty_map));
+    let identity = Rc::new(Sum::new(ones, diagonalize_2d));
+    let strided_squared = Rc::new(LeftComposition::new(strided.clone(), square));
+    let sparse_coo_squared = Rc::new(LeftComposition::new(sparse_coo.clone(), square));
 
     // Printing
     println!("strided:\n{strided}");
@@ -89,11 +64,11 @@ fn main() {
     println!("\nstrided_squared:\n{strided_squared}");
     println!("\nsparse_coo_squared:\n{sparse_coo_squared}");
 
-    let index = vec![2, 1];
+    let index = [2, 1];
     println!(
         "strided({}, {}) = {}",
         index[0],
         index[1],
-        strided.get(Multintdex::new(index.clone()))
+        strided.get(&index)
     );
 }
