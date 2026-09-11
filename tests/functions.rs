@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, BoxedTensor, COO, Domain, Physical, RightComposition, Stride, Sum, Tensor,
-    diagonalize, eye, eye_rect, movedim, negate, ones, permute, square, transpose, zeros,
+    BoxDomain, BoxedTensor, COO, Domain, Physical, RightComposition, Stride, Sum, Tensor, clamp,
+    diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow, scale, square, transpose,
+    zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -52,6 +53,51 @@ fn elementwise_functions_compose() {
         let value = (i + 1) as f32;
         assert_eq!(squared_negative.get(&[i]), value * value);
     }
+}
+
+// These carry a value of their own, which a plain `fn` pointer could not hold.
+#[test]
+fn parameterised_transforms_remember_their_argument() {
+    let doubled = scale(physical(), 2.0);
+    let cubed = pow(physical(), 3.0);
+    let bounded = clamp(physical(), 2.0, 4.0);
+
+    for i in 0..6 {
+        let value = (i + 1) as f32;
+        assert_eq!(doubled.get(&[i]), value * 2.0);
+        assert_eq!(cubed.get(&[i]), value * value * value);
+    }
+
+    // [1, 2, 3, 4, 5, 6] held between 2 and 4.
+    let expected = [2.0, 2.0, 3.0, 4.0, 4.0, 4.0];
+    for (i, expected) in expected.iter().enumerate() {
+        assert_eq!(bounded.get(&[i]), *expected);
+    }
+}
+
+#[test]
+fn parameterised_transforms_compose() {
+    let scaled_twice = scale(Rc::new(scale(physical(), 2.0)), 3.0);
+
+    for i in 0..6 {
+        assert_eq!(scaled_twice.get(&[i]), (i + 1) as f32 * 6.0);
+    }
+}
+
+#[test]
+fn several_transforms_of_one_tensor_keep_their_own_arguments() {
+    let shared = physical();
+    let doubled = scale(shared.clone(), 2.0);
+    let tripled = scale(shared, 3.0);
+
+    assert_eq!(doubled.get(&[0]), 2.0);
+    assert_eq!(tripled.get(&[0]), 3.0);
+}
+
+#[test]
+#[should_panic(expected = "must not exceed")]
+fn clamp_rejects_a_reversed_range() {
+    clamp(physical(), 4.0, 2.0);
 }
 
 #[test]

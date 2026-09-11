@@ -19,6 +19,19 @@ pub fn negate<T: Tensor + ?Sized>(u: Rc<T>) -> LeftComposition<T> {
     LeftComposition::new(u, |x| -x)
 }
 
+pub fn scale<T: Tensor + ?Sized>(u: Rc<T>, factor: f32) -> LeftComposition<T> {
+    LeftComposition::new(u, move |x| x * factor)
+}
+
+pub fn pow<T: Tensor + ?Sized>(u: Rc<T>, exponent: f32) -> LeftComposition<T> {
+    LeftComposition::new(u, move |x| x.powf(exponent))
+}
+
+pub fn clamp<T: Tensor + ?Sized>(u: Rc<T>, low: f32, high: f32) -> LeftComposition<T> {
+    assert!(low <= high, "the low bound must not exceed the high one");
+    LeftComposition::new(u, move |x| x.clamp(low, high))
+}
+
 /// Reorders the axes of a tensor: `axes[i]` is the axis of `u` that becomes
 /// axis `i` of the result.
 pub fn permute<T: BoxedTensor + 'static>(

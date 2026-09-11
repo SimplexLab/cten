@@ -98,12 +98,14 @@ impl<M: BoxedMapping + ?Sized> BoxedTensor for RightComposition<M> {
 // tensor is known to be boxed, and printable, in turn.
 pub struct LeftComposition<T: ?Sized> {
     u: Rc<T>,
-    f: fn(f32) -> f32,
+    // Held as a closure rather than a plain `fn` pointer so that a transform can
+    // carry values of its own, as `scale` and `clamp` do.
+    f: Rc<dyn Fn(f32) -> f32>,
 }
 
 impl<T: Tensor + ?Sized> LeftComposition<T> {
-    pub fn new(u: Rc<T>, f: fn(f32) -> f32) -> Self {
-        Self { u, f }
+    pub fn new(u: Rc<T>, f: impl Fn(f32) -> f32 + 'static) -> Self {
+        Self { u, f: Rc::new(f) }
     }
 }
 

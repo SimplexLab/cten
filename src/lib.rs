@@ -10,7 +10,8 @@ pub mod tensor;
 pub use display::{BoxedTensor, format_boxed};
 pub use domain::{BoxDomain, Domain};
 pub use functions::{
-    diagonalize, eye, eye_rect, movedim, negate, ones, permute, square, transpose, zeros,
+    clamp, diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow, scale, square,
+    transpose, zeros,
 };
 pub use mapping::{
     BoxedMapping, BoxedPowersetMapping, COO, Diagonal, EmptyMapping, IndexMapping, Permutation,
