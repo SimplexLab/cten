@@ -95,9 +95,16 @@ fn several_transforms_of_one_tensor_keep_their_own_arguments() {
 }
 
 #[test]
-#[should_panic(expected = "must not exceed")]
+#[should_panic(expected = "got 4 and 2")]
 fn clamp_rejects_a_reversed_range() {
     clamp(physical(), 4.0, 2.0);
+}
+
+// Rejecting these up front is what keeps `f32::clamp` from panicking on a read.
+#[test]
+#[should_panic(expected = "clamp needs low <= high")]
+fn clamp_rejects_a_nan_bound() {
+    clamp(physical(), f32::NAN, 4.0);
 }
 
 #[test]

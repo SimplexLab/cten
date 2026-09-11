@@ -27,8 +27,11 @@ pub fn pow<T: Tensor + ?Sized>(u: Rc<T>, exponent: f32) -> LeftComposition<T> {
     LeftComposition::new(u, move |x| x.powf(exponent))
 }
 
+/// Checking the bounds here rather than leaving it to `f32::clamp` reports the
+/// mistake where it is made, not at the first read, and rules out the NaN
+/// bounds that would panic there too.
 pub fn clamp<T: Tensor + ?Sized>(u: Rc<T>, low: f32, high: f32) -> LeftComposition<T> {
-    assert!(low <= high, "the low bound must not exceed the high one");
+    assert!(low <= high, "clamp needs low <= high, got {low} and {high}");
     LeftComposition::new(u, move |x| x.clamp(low, high))
 }
 
