@@ -99,6 +99,66 @@ impl BoxedMapping for Stride {
     }
 }
 
+pub struct Permutation {
+    domain: BoxDomain,
+    codomain: BoxDomain,
+    axes: Vec<usize>,
+}
+
+impl Permutation {
+    /// Takes the codomain and derives the domain, the other way round from the
+    /// mappings above: the shape being permuted is what is known, and the
+    /// permuted shape follows from it. `axes[i]` is the axis of the codomain
+    /// that becomes axis `i` of the domain.
+    pub fn new(codomain: BoxDomain, axes: Vec<usize>) -> Self {
+        assert_eq!(
+            axes.len(),
+            codomain.ndim(),
+            "an axis per dimension of the codomain is required"
+        );
+        let mut seen = vec![false; axes.len()];
+        for &axis in &axes {
+            assert!(axis < axes.len(), "axis {axis} is out of range");
+            assert!(!seen[axis], "axis {axis} is repeated");
+            seen[axis] = true;
+        }
+        let shape = axes.iter().map(|&axis| codomain.shape()[axis]).collect();
+        Self {
+            domain: BoxDomain::new(shape),
+            codomain,
+            axes,
+        }
+    }
+
+    pub fn axes(&self) -> &[usize] {
+        &self.axes
+    }
+}
+
+impl IndexMapping for Permutation {
+    fn map(&self, index: &[usize]) -> Vec<usize> {
+        let mut result = vec![0; self.axes.len()];
+        for (i, &axis) in self.axes.iter().enumerate() {
+            result[axis] = index[i];
+        }
+        result
+    }
+
+    fn domain(&self) -> &dyn Domain {
+        &self.domain
+    }
+
+    fn codomain(&self) -> &dyn Domain {
+        &self.codomain
+    }
+}
+
+impl BoxedMapping for Permutation {
+    fn box_domain(&self) -> &BoxDomain {
+        &self.domain
+    }
+}
+
 pub struct EmptyMapping {
     domain: BoxDomain,
     codomain: BoxDomain,

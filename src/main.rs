@@ -1,13 +1,9 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, COO, Diagonal, EmptyMapping, LeftComposition, Physical, Product, RightComposition,
-    Stride, Sum, Sup, Tensor,
+    BoxDomain, COO, Physical, Product, RightComposition, Stride, Sum, Sup, Tensor, diagonalize,
+    eye, movedim, negate, ones, square, transpose, zeros,
 };
-
-fn square(x: f32) -> f32 {
-    x * x
-}
 
 fn main() {
     // Mappings
@@ -28,12 +24,6 @@ fn main() {
         BoxDomain::new(vec![13]),
         vec![vec![0], vec![4], vec![5], vec![1], vec![10], vec![12]],
     ));
-    let diagonalize_2d = Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6])));
-    let diagonalize_3d = Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6, 6])));
-    let empty_map = Rc::new(EmptyMapping::new(
-        BoxDomain::new(vec![6]),
-        BoxDomain::new(vec![0]),
-    ));
 
     // Tensors
     let physical = Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
@@ -43,13 +33,18 @@ fn main() {
     let sparse_coo = Rc::new(Sum::new(physical.clone(), coo.clone()));
     let prod_coo = Rc::new(Product::new(physical.clone(), coo.clone()));
     let sup_coo = Rc::new(Sup::new(physical.clone(), coo));
-    let diag2d = Rc::new(Sum::new(physical.clone(), diagonalize_2d.clone()));
-    let diag3d = Rc::new(Sum::new(physical, diagonalize_3d));
-    let empty = Rc::new(Physical::new(vec![]));
-    let ones = Rc::new(Product::new(empty, empty_map));
-    let identity = Rc::new(Sum::new(ones, diagonalize_2d));
-    let strided_squared = Rc::new(LeftComposition::new(strided.clone(), square));
-    let sparse_coo_squared = Rc::new(LeftComposition::new(sparse_coo.clone(), square));
+    let diag2d = Rc::new(diagonalize(physical.clone(), 2));
+    let diag3d = Rc::new(diagonalize(physical.clone(), 3));
+    let identity = Rc::new(eye(6));
+    let strided_squared = Rc::new(square(strided.clone()));
+    let sparse_coo_squared = Rc::new(square(sparse_coo.clone()));
+
+    // Tensors built with the functions only
+    let transposed = Rc::new(transpose(strided.clone()));
+    let moved = Rc::new(movedim(Rc::new(ones(vec![2, 3, 4])), 0, 2));
+    let negated = Rc::new(negate(physical.clone()));
+    let zeroed = Rc::new(zeros(vec![2, 3]));
+    let transposed_identity = Rc::new(transpose(identity.clone()));
 
     // Printing
     println!("strided:\n{strided}");
@@ -71,4 +66,11 @@ fn main() {
         index[1],
         strided.get(&index)
     );
+
+    println!("\ntransposed:\n{transposed}");
+    println!("\nmoved:\n{moved}");
+    println!("\nnegated:\n{negated}");
+    println!("\nzeroed:\n{zeroed}");
+    // Transposing an identity built over no data at all gives it back.
+    println!("\ntransposed_identity:\n{transposed_identity}");
 }

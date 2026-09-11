@@ -3,14 +3,18 @@
 
 pub mod display;
 pub mod domain;
+pub mod functions;
 pub mod mapping;
 pub mod tensor;
 
 pub use display::{BoxedTensor, format_boxed};
 pub use domain::{BoxDomain, Domain};
+pub use functions::{
+    diagonalize, eye, eye_rect, movedim, negate, ones, permute, square, transpose, zeros,
+};
 pub use mapping::{
-    BoxedMapping, BoxedPowersetMapping, COO, Diagonal, EmptyMapping, IndexMapping, Powerset,
-    PowersetMapping, Stride,
+    BoxedMapping, BoxedPowersetMapping, COO, Diagonal, EmptyMapping, IndexMapping, Permutation,
+    Powerset, PowersetMapping, Stride,
 };
 pub use tensor::{
     Inf, InfReduction, LeftComposition, Physical, Product, ProductReduction, Reduction,
