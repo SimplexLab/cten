@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use bten::{
     BoxDomain, BoxedTensor, COO, Diagonal, Domain, EmptyMapping, IndexMapping, LeftComposition,
-    Physical, Powerset, PowersetMapping, RightComposition, Stride, Sum, Tensor, format_boxed,
+    Permutation, Physical, Powerset, PowersetMapping, RightComposition, Stride, Sum, Tensor,
+    format_boxed,
 };
 
 fn physical() -> Rc<Physical> {
@@ -133,6 +134,21 @@ fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
     assert!(!diagonal.domain().contains(&[3, 5, 3]));
     assert!(diagonal.codomain().contains(&[3]));
     assert!(!diagonal.codomain().contains(&[4]));
+}
+
+#[test]
+fn a_permutation_reorders_its_domain_and_keeps_its_codomain() {
+    let permutation = Permutation::new(BoxDomain::new(vec![2, 3, 4]), vec![2, 0, 1]);
+
+    // Axis 2 of the codomain becomes axis 0 of the domain, and so on, so the
+    // domain is the codomain's shape read through `axes`.
+    assert_eq!(permutation.axes(), &[2, 0, 1]);
+    assert_eq!(permutation.domain().ndim(), 3);
+    assert!(permutation.domain().contains(&[3, 1, 2]));
+    assert!(!permutation.domain().contains(&[4, 1, 2]));
+    assert!(permutation.codomain().contains(&[1, 2, 3]));
+    assert!(!permutation.codomain().contains(&[1, 3, 2]));
+    assert_eq!(permutation.map(&[3, 1, 2]), vec![1, 2, 3]);
 }
 
 #[test]
