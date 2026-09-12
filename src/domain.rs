@@ -22,7 +22,7 @@ impl BoxDomain {
         &self.shape
     }
 
-    pub fn size(&self) -> usize {
+    pub fn cardinality(&self) -> usize {
         self.shape.iter().product()
     }
 }
