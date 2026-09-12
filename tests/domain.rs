@@ -22,3 +22,12 @@ fn a_one_dimensional_hrect_is_a_flat_range() {
     assert!(hrect.contains(&[3]));
     assert!(!hrect.contains(&[4]));
 }
+
+#[test]
+fn a_zero_dimensional_hrect_is_an_empty_set() {
+    let hrect = HRect::new(vec![]);
+
+    assert_eq!(hrect.ndim(), 0);
+    assert!(hrect.contains(&[]));
+    assert!(!hrect.contains(&[0]));
+}
