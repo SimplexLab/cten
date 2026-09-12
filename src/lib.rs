@@ -8,7 +8,7 @@ pub mod mapping;
 pub mod tensor;
 
 pub use display::{BoxedTensor, format_boxed};
-pub use domain::{BoxDomain, Domain};
+pub use domain::{Domain, HRect};
 pub use functions::{
     clamp, diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow, scale, square,
     transpose, zeros,

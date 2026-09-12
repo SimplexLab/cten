@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::domain::{BoxDomain, Domain};
+use crate::domain::{Domain, HRect};
 
 /// A set of indices, as returned by a `PowersetMapping`.
 pub type Powerset = HashSet<Vec<usize>>;
@@ -14,10 +14,10 @@ pub trait IndexMapping {
     fn codomain(&self) -> &dyn Domain;
 }
 
-/// A mapping whose domain is a box. Composing a tensor over one of these gives
+/// A mapping whose domain is a hrect. Composing a tensor over one of these gives
 /// a boxed tensor, hence a printable one.
 pub trait BoxedMapping: IndexMapping {
-    fn box_domain(&self) -> &BoxDomain;
+    fn hrect_domain(&self) -> &HRect;
 }
 
 /// A mapping sending each index of its domain to a set of indices of its
@@ -31,26 +31,26 @@ pub trait PowersetMapping {
     fn codomain(&self) -> &dyn Domain;
 }
 
-/// A powerset mapping whose domain is a box. Reducing over one of these gives a
+/// A powerset mapping whose domain is a hrect. Reducing over one of these gives a
 /// boxed tensor, hence a printable one.
 pub trait BoxedPowersetMapping: PowersetMapping {
-    fn box_domain(&self) -> &BoxDomain;
+    fn hrect_domain(&self) -> &HRect;
 }
 
 pub struct Stride {
-    domain: BoxDomain,
-    codomain: BoxDomain,
+    domain: HRect,
+    codomain: HRect,
     strides: Vec<usize>,
 }
 
 impl Stride {
-    pub fn new(domain: BoxDomain, strides: Vec<usize>) -> Self {
+    pub fn new(domain: HRect, strides: Vec<usize>) -> Self {
         assert_eq!(
             domain.ndim(),
             strides.len(),
             "a stride per dimension of the domain is required"
         );
-        let codomain = BoxDomain::new(vec![flat_extent(domain.shape(), &strides)]);
+        let codomain = HRect::new(vec![flat_extent(domain.shape(), &strides)]);
         Self {
             domain,
             codomain,
@@ -63,7 +63,7 @@ impl Stride {
     }
 }
 
-/// Number of flat positions a strided box reaches: one past its largest index.
+/// Number of flat positions a strided hrect reaches: one past its largest index.
 fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
     if shape.contains(&0) {
         return 0;
@@ -94,14 +94,14 @@ impl IndexMapping for Stride {
 }
 
 impl BoxedMapping for Stride {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }
 
 pub struct Permutation {
-    domain: BoxDomain,
-    codomain: BoxDomain,
+    domain: HRect,
+    codomain: HRect,
     axes: Vec<usize>,
 }
 
@@ -110,7 +110,7 @@ impl Permutation {
     /// mappings above: the shape being permuted is what is known, and the
     /// permuted shape follows from it. `axes[i]` is the axis of the codomain
     /// that becomes axis `i` of the domain.
-    pub fn new(codomain: BoxDomain, axes: Vec<usize>) -> Self {
+    pub fn new(codomain: HRect, axes: Vec<usize>) -> Self {
         assert_eq!(
             axes.len(),
             codomain.ndim(),
@@ -124,7 +124,7 @@ impl Permutation {
         }
         let shape = axes.iter().map(|&axis| codomain.shape()[axis]).collect();
         Self {
-            domain: BoxDomain::new(shape),
+            domain: HRect::new(shape),
             codomain,
             axes,
         }
@@ -154,18 +154,18 @@ impl IndexMapping for Permutation {
 }
 
 impl BoxedMapping for Permutation {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }
 
 pub struct EmptyMapping {
-    domain: BoxDomain,
-    codomain: BoxDomain,
+    domain: HRect,
+    codomain: HRect,
 }
 
 impl EmptyMapping {
-    pub fn new(domain: BoxDomain, codomain: BoxDomain) -> Self {
+    pub fn new(domain: HRect, codomain: HRect) -> Self {
         Self { domain, codomain }
     }
 }
@@ -185,20 +185,20 @@ impl PowersetMapping for EmptyMapping {
 }
 
 impl BoxedPowersetMapping for EmptyMapping {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }
 
 pub struct COO {
-    domain: BoxDomain,
-    codomain: BoxDomain,
+    domain: HRect,
+    codomain: HRect,
     inverse_coords: Vec<Vec<usize>>,
 }
 
 impl COO {
-    pub fn new(domain: BoxDomain, inverse_coords: Vec<Vec<usize>>) -> Self {
-        let codomain = BoxDomain::new(vec![inverse_coords.len()]);
+    pub fn new(domain: HRect, inverse_coords: Vec<Vec<usize>>) -> Self {
+        let codomain = HRect::new(vec![inverse_coords.len()]);
         Self {
             domain,
             codomain,
@@ -236,24 +236,24 @@ impl PowersetMapping for COO {
 }
 
 impl BoxedPowersetMapping for COO {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }
 
 pub struct Diagonal {
-    domain: BoxDomain,
-    codomain: BoxDomain,
+    domain: HRect,
+    codomain: HRect,
 }
 
 impl Diagonal {
-    pub fn new(domain: BoxDomain) -> Self {
+    pub fn new(domain: HRect) -> Self {
         // Only indices repeated along every dimension are hit, so the diagonal
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
         Self {
             domain,
-            codomain: BoxDomain::new(vec![extent]),
+            codomain: HRect::new(vec![extent]),
         }
     }
 }
@@ -281,7 +281,7 @@ impl PowersetMapping for Diagonal {
 }
 
 impl BoxedPowersetMapping for Diagonal {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }

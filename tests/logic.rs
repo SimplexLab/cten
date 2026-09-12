@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, COO, Diagonal, EmptyMapping, Inf, LeftComposition, Physical, PowersetMapping,
-    Product, RightComposition, Stride, Sum, Sup, Tensor,
+    COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping, Product,
+    RightComposition, Stride, Sum, Sup, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -17,7 +17,7 @@ fn collect_2d(tensor: &dyn Tensor, rows: usize, cols: usize) -> Vec<Vec<f32>> {
 
 fn coo_2d() -> Rc<COO> {
     Rc::new(COO::new(
-        BoxDomain::new(vec![6, 5]),
+        HRect::new(vec![6, 5]),
         vec![
             vec![0, 0],
             vec![0, 3],
@@ -53,7 +53,7 @@ fn physical_rejects_indices_of_the_wrong_rank() {
 fn right_composition_reads_through_a_stride() {
     let strided = RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     );
 
     assert_eq!(
@@ -66,7 +66,7 @@ fn right_composition_reads_through_a_stride() {
 fn a_zero_stride_broadcasts_along_its_axis() {
     let repeated = RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![4, 6]), vec![0, 1])),
+        Rc::new(Stride::new(HRect::new(vec![4, 6]), vec![0, 1])),
     );
 
     let rows = collect_2d(&repeated, 4, 6);
@@ -82,12 +82,12 @@ fn a_zero_stride_broadcasts_along_its_axis() {
 fn composing_over_a_tensor_of_the_wrong_rank_is_rejected() {
     let strided = Rc::new(RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     ));
 
     RightComposition::new(
         strided,
-        Rc::new(Stride::new(BoxDomain::new(vec![2, 3]), vec![1, 1])),
+        Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![1, 1])),
     );
 }
 
@@ -95,7 +95,7 @@ fn composing_over_a_tensor_of_the_wrong_rank_is_rejected() {
 fn left_composition_transforms_values_pointwise() {
     let strided = Rc::new(RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     ));
     let squared = LeftComposition::new(strided, |x| x * x);
 
@@ -110,7 +110,7 @@ fn left_composition_transforms_values_pointwise() {
 #[test]
 fn a_sparse_vector_can_be_read_through_a_mapping() {
     let coo_vector = Rc::new(COO::new(
-        BoxDomain::new(vec![6]),
+        HRect::new(vec![6]),
         vec![vec![0], vec![4], vec![5]],
     ));
     let sparse = Rc::new(Sum::new(physical(), coo_vector));
@@ -122,7 +122,7 @@ fn a_sparse_vector_can_be_read_through_a_mapping() {
 
     let repeated = RightComposition::new(
         sparse.clone(),
-        Rc::new(Stride::new(BoxDomain::new(vec![2, 6]), vec![0, 1])),
+        Rc::new(Stride::new(HRect::new(vec![2, 6]), vec![0, 1])),
     );
 
     for row in collect_2d(&repeated, 2, 6) {
@@ -169,7 +169,7 @@ fn each_reduction_falls_back_to_its_neutral_element() {
 fn reductions_accumulate_over_every_matching_position() {
     let overlapping = || {
         Rc::new(COO::new(
-            BoxDomain::new(vec![2, 2]),
+            HRect::new(vec![2, 2]),
             vec![vec![1, 1], vec![1, 1], vec![1, 1]],
         ))
     };
@@ -189,7 +189,7 @@ fn reductions_accumulate_over_every_matching_position() {
 
 #[test]
 fn a_partial_coo_entry_matches_every_index_sharing_its_prefix() {
-    let row_pattern = Rc::new(COO::new(BoxDomain::new(vec![4, 3]), vec![vec![2]]));
+    let row_pattern = Rc::new(COO::new(HRect::new(vec![4, 3]), vec![vec![2]]));
     let sum = Sum::new(physical(), row_pattern);
 
     assert_eq!(
@@ -205,10 +205,7 @@ fn a_partial_coo_entry_matches_every_index_sharing_its_prefix() {
 
 #[test]
 fn diagonal_reduction_builds_a_diagonal_matrix() {
-    let diag = Sum::new(
-        physical(),
-        Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6]))),
-    );
+    let diag = Sum::new(physical(), Rc::new(Diagonal::new(HRect::new(vec![6, 6]))));
 
     for i in 0..6 {
         for j in 0..6 {
@@ -222,7 +219,7 @@ fn diagonal_reduction_builds_a_diagonal_matrix() {
 fn diagonal_reduction_generalises_to_rank_three() {
     let diag = Sum::new(
         physical(),
-        Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6, 6]))),
+        Rc::new(Diagonal::new(HRect::new(vec![6, 6, 6]))),
     );
 
     assert_eq!(diag.get(&[2, 2, 2]), 3.0);
@@ -238,17 +235,14 @@ fn empty_mapping_under_a_product_yields_ones_from_an_empty_store() {
     let empty = Rc::new(Physical::new(vec![]));
     let ones = Rc::new(Product::new(
         empty,
-        Rc::new(EmptyMapping::new(
-            BoxDomain::new(vec![6]),
-            BoxDomain::new(vec![0]),
-        )),
+        Rc::new(EmptyMapping::new(HRect::new(vec![6]), HRect::new(vec![0]))),
     ));
 
     for i in 0..6 {
         assert_eq!(ones.get(&[i]), 1.0);
     }
 
-    let identity = Sum::new(ones, Rc::new(Diagonal::new(BoxDomain::new(vec![6, 6]))));
+    let identity = Sum::new(ones, Rc::new(Diagonal::new(HRect::new(vec![6, 6]))));
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { 1.0 } else { 0.0 };
@@ -262,13 +256,13 @@ fn compositions_nest_to_arbitrary_depth() {
     let sparse = Rc::new(Sum::new(
         physical(),
         Rc::new(COO::new(
-            BoxDomain::new(vec![13]),
+            HRect::new(vec![13]),
             vec![vec![0], vec![4], vec![5], vec![1], vec![10], vec![12]],
         )),
     ));
     let repeated = Rc::new(RightComposition::new(
         sparse,
-        Rc::new(Stride::new(BoxDomain::new(vec![10, 13]), vec![0, 1])),
+        Rc::new(Stride::new(HRect::new(vec![10, 13]), vec![0, 1])),
     ));
     let squared = LeftComposition::new(repeated, |x| x * x);
 
@@ -286,7 +280,7 @@ fn compositions_nest_to_arbitrary_depth() {
 
 #[test]
 fn a_powerset_mapping_can_be_used_directly() {
-    let diagonal = Diagonal::new(BoxDomain::new(vec![6, 6]));
+    let diagonal = Diagonal::new(HRect::new(vec![6, 6]));
     let selected = diagonal.map(&[4, 4]);
 
     assert_eq!(selected.len(), 1);

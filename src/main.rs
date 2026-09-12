@@ -1,16 +1,16 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, COO, Physical, Product, RightComposition, Stride, Sum, Sup, Tensor, diagonalize,
-    eye, movedim, negate, ones, square, transpose, zeros,
+    COO, HRect, Physical, Product, RightComposition, Stride, Sum, Sup, Tensor, diagonalize, eye,
+    movedim, negate, ones, square, transpose, zeros,
 };
 
 fn main() {
     // Mappings
-    let stride = Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3]));
-    let repeat = Rc::new(Stride::new(BoxDomain::new(vec![10, 13]), vec![0, 1]));
+    let stride = Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3]));
+    let repeat = Rc::new(Stride::new(HRect::new(vec![10, 13]), vec![0, 1]));
     let coo = Rc::new(COO::new(
-        BoxDomain::new(vec![6, 5]),
+        HRect::new(vec![6, 5]),
         vec![
             vec![0, 0],
             vec![0, 3],
@@ -21,7 +21,7 @@ fn main() {
         ],
     ));
     let coo_vector = Rc::new(COO::new(
-        BoxDomain::new(vec![13]),
+        HRect::new(vec![13]),
         vec![vec![0], vec![4], vec![5], vec![1], vec![10], vec![12]],
     ));
 

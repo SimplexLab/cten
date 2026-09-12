@@ -9,11 +9,11 @@ pub trait Domain {
 
 /// A hyperrectangle of indices: coordinate `i` runs over `0..shape[i]`.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct BoxDomain {
+pub struct HRect {
     shape: Vec<usize>,
 }
 
-impl BoxDomain {
+impl HRect {
     pub fn new(shape: Vec<usize>) -> Self {
         Self { shape }
     }
@@ -23,7 +23,7 @@ impl BoxDomain {
     }
 }
 
-impl Domain for BoxDomain {
+impl Domain for HRect {
     fn ndim(&self) -> usize {
         self.shape.len()
     }

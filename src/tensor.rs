@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
-use crate::domain::{BoxDomain, Domain};
+use crate::domain::{Domain, HRect};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
 /// A mapping from an index set to a value set. The index set is the tensor's
@@ -29,12 +29,12 @@ fn check_composable(codomain: &dyn Domain, u: &dyn Tensor) {
 
 pub struct Physical {
     values: Vec<f32>,
-    domain: BoxDomain,
+    domain: HRect,
 }
 
 impl Physical {
     pub fn new(values: Vec<f32>) -> Self {
-        let domain = BoxDomain::new(vec![values.len()]);
+        let domain = HRect::new(vec![values.len()]);
         Self { values, domain }
     }
 }
@@ -55,7 +55,7 @@ impl Tensor for Physical {
 }
 
 impl BoxedTensor for Physical {
-    fn box_domain(&self) -> &BoxDomain {
+    fn hrect_domain(&self) -> &HRect {
         &self.domain
     }
 }
@@ -88,8 +88,8 @@ impl<M: IndexMapping + ?Sized> Tensor for RightComposition<M> {
 }
 
 impl<M: BoxedMapping + ?Sized> BoxedTensor for RightComposition<M> {
-    fn box_domain(&self) -> &BoxDomain {
-        self.mapping.box_domain()
+    fn hrect_domain(&self) -> &HRect {
+        self.mapping.hrect_domain()
     }
 }
 
@@ -120,8 +120,8 @@ impl<T: Tensor + ?Sized> Tensor for LeftComposition<T> {
 }
 
 impl<T: BoxedTensor + ?Sized> BoxedTensor for LeftComposition<T> {
-    fn box_domain(&self) -> &BoxDomain {
-        self.u.box_domain()
+    fn hrect_domain(&self) -> &HRect {
+        self.u.hrect_domain()
     }
 }
 
@@ -202,8 +202,8 @@ impl<R: Reduction, M: PowersetMapping + ?Sized> Tensor for ReductionTensor<R, M>
 }
 
 impl<R: Reduction, M: BoxedPowersetMapping + ?Sized> BoxedTensor for ReductionTensor<R, M> {
-    fn box_domain(&self) -> &BoxDomain {
-        self.mapping.box_domain()
+    fn hrect_domain(&self) -> &HRect {
+        self.mapping.hrect_domain()
     }
 }
 

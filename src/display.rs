@@ -1,26 +1,26 @@
-//! Printing of boxed tensors: those whose domain is a box. The `Display`
+//! Printing of boxed tensors: those whose domain is a hrect. The `Display`
 //! implementations live here rather than next to each tensor, since they all
 //! render the same way, by walking a shape.
 
 use std::fmt;
 use std::fmt::Write as _;
 
-use crate::domain::BoxDomain;
+use crate::domain::HRect;
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping};
 use crate::tensor::{
     LeftComposition, Physical, Reduction, ReductionTensor, RightComposition, Tensor,
 };
 
-/// A tensor whose domain is a box. Only these can be printed, since formatting
+/// A tensor whose domain is a hrect. Only these can be printed, since formatting
 /// walks a shape and visits every index of it.
 pub trait BoxedTensor: Tensor {
-    fn box_domain(&self) -> &BoxDomain;
+    fn hrect_domain(&self) -> &HRect;
 }
 
 /// Renders a boxed tensor. Every `Display` implementation below defers to this,
 /// and each is written for the boxed instantiation of its tensor only.
 pub fn format_boxed(tensor: &dyn BoxedTensor) -> String {
-    format_tensor(tensor.box_domain().shape(), &|index| tensor.get(index))
+    format_tensor(tensor.hrect_domain().shape(), &|index| tensor.get(index))
 }
 
 impl fmt::Display for Physical {

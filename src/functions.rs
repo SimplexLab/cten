@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
-use crate::domain::BoxDomain;
+use crate::domain::HRect;
 use crate::mapping::{Diagonal, EmptyMapping, Permutation};
 use crate::tensor::{
     LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition, Sum, Tensor,
@@ -41,7 +41,7 @@ pub fn permute<T: BoxedTensor + 'static>(
     u: Rc<T>,
     axes: Vec<usize>,
 ) -> RightComposition<Permutation> {
-    let codomain = u.box_domain().clone();
+    let codomain = u.hrect_domain().clone();
     RightComposition::new(u, Rc::new(Permutation::new(codomain, axes)))
 }
 
@@ -81,17 +81,14 @@ pub fn movedim<T: BoxedTensor + 'static>(
 pub fn diagonalize<T: BoxedTensor + 'static>(u: Rc<T>, rank: usize) -> Sum<Diagonal> {
     assert_eq!(u.domain().ndim(), 1, "diagonalize takes a vector");
     assert!(rank > 0, "a diagonal tensor has at least one dimension");
-    let extent = u.box_domain().shape()[0];
-    Sum::new(
-        u,
-        Rc::new(Diagonal::new(BoxDomain::new(vec![extent; rank]))),
-    )
+    let extent = u.hrect_domain().shape()[0];
+    Sum::new(u, Rc::new(Diagonal::new(HRect::new(vec![extent; rank]))))
 }
 
 /// Reducing over the empty set gives the reduction's neutral element at every
 /// index, so a constant tensor needs no underlying data at all.
 fn neutral<R: Reduction>(shape: Vec<usize>) -> ReductionTensor<R, EmptyMapping> {
-    let mapping = EmptyMapping::new(BoxDomain::new(shape), BoxDomain::new(vec![0]));
+    let mapping = EmptyMapping::new(HRect::new(shape), HRect::new(vec![0]));
     ReductionTensor::new(Rc::new(Physical::new(vec![])), Rc::new(mapping))
 }
 
@@ -109,7 +106,7 @@ pub fn eye_rect(rows: usize, cols: usize) -> Sum<Diagonal> {
     let extent = rows.min(cols);
     Sum::new(
         Rc::new(ones(vec![extent])),
-        Rc::new(Diagonal::new(BoxDomain::new(vec![rows, cols]))),
+        Rc::new(Diagonal::new(HRect::new(vec![rows, cols]))),
     )
 }
 

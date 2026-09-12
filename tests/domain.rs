@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxDomain, BoxedTensor, COO, Diagonal, Domain, EmptyMapping, IndexMapping, LeftComposition,
+    BoxedTensor, COO, Diagonal, Domain, EmptyMapping, HRect, IndexMapping, LeftComposition,
     Permutation, Physical, Powerset, PowersetMapping, RightComposition, Stride, Sum, Tensor,
     format_boxed,
 };
@@ -10,7 +10,7 @@ fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
 }
 
-/// A domain that is not a box: the indices on and below the diagonal of a
+/// A domain that is not a hrect: the indices on and below the diagonal of a
 /// square matrix.
 struct LowerTriangle {
     extent: usize,
@@ -26,19 +26,19 @@ impl Domain for LowerTriangle {
     }
 }
 
-/// A mapping laying a lower triangle out row by row. Its domain is not a box,
+/// A mapping laying a lower triangle out row by row. Its domain is not a hrect,
 /// so it is not a `BoxedMapping`, and tensors composed over it are not boxed
 /// either.
 struct TriangularLayout {
     domain: LowerTriangle,
-    codomain: BoxDomain,
+    codomain: HRect,
 }
 
 impl TriangularLayout {
     fn new(extent: usize) -> Self {
         Self {
             domain: LowerTriangle { extent },
-            codomain: BoxDomain::new(vec![extent * (extent + 1) / 2]),
+            codomain: HRect::new(vec![extent * (extent + 1) / 2]),
         }
     }
 }
@@ -72,31 +72,31 @@ impl PowersetMapping for TriangularLayout {
 }
 
 #[test]
-fn a_box_holds_exactly_the_indices_within_its_shape() {
-    let box_domain = BoxDomain::new(vec![3, 2]);
+fn a_hrect_holds_exactly_the_indices_within_its_shape() {
+    let hrect_domain = HRect::new(vec![3, 2]);
 
-    assert_eq!(box_domain.shape(), &[3, 2]);
-    assert_eq!(box_domain.ndim(), 2);
-    assert!(box_domain.contains(&[2, 1]));
-    assert!(!box_domain.contains(&[3, 1]));
-    assert!(!box_domain.contains(&[2, 2]));
+    assert_eq!(hrect_domain.shape(), &[3, 2]);
+    assert_eq!(hrect_domain.ndim(), 2);
+    assert!(hrect_domain.contains(&[2, 1]));
+    assert!(!hrect_domain.contains(&[3, 1]));
+    assert!(!hrect_domain.contains(&[2, 2]));
     // Rank has to match too.
-    assert!(!box_domain.contains(&[2]));
-    assert!(!box_domain.contains(&[2, 1, 0]));
+    assert!(!hrect_domain.contains(&[2]));
+    assert!(!hrect_domain.contains(&[2, 1, 0]));
 }
 
 #[test]
-fn a_one_dimensional_box_is_a_flat_range() {
-    let box_domain = BoxDomain::new(vec![4]);
+fn a_one_dimensional_hrect_is_a_flat_range() {
+    let hrect_domain = HRect::new(vec![4]);
 
-    assert_eq!(box_domain.ndim(), 1);
-    assert!(box_domain.contains(&[3]));
-    assert!(!box_domain.contains(&[4]));
+    assert_eq!(hrect_domain.ndim(), 1);
+    assert!(hrect_domain.contains(&[3]));
+    assert!(!hrect_domain.contains(&[4]));
 }
 
 #[test]
-fn a_stride_goes_from_its_box_to_the_flat_positions_it_reaches() {
-    let stride = Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3]);
+fn a_stride_goes_from_its_hrect_to_the_flat_positions_it_reaches() {
+    let stride = Stride::new(HRect::new(vec![3, 2]), vec![1, 3]);
 
     assert!(stride.domain().contains(&[2, 1]));
     assert!(!stride.domain().contains(&[3, 0]));
@@ -105,15 +105,15 @@ fn a_stride_goes_from_its_box_to_the_flat_positions_it_reaches() {
     assert!(stride.codomain().contains(&[5]));
     assert!(!stride.codomain().contains(&[6]));
     // A broadcasting stride reaches fewer positions than its domain has indices.
-    let repeat = Stride::new(BoxDomain::new(vec![4, 6]), vec![0, 1]);
+    let repeat = Stride::new(HRect::new(vec![4, 6]), vec![0, 1]);
     assert!(repeat.codomain().contains(&[5]));
     assert!(!repeat.codomain().contains(&[6]));
 }
 
 #[test]
-fn a_coo_goes_from_its_box_to_the_positions_it_stores() {
+fn a_coo_goes_from_its_hrect_to_the_positions_it_stores() {
     let coo = COO::new(
-        BoxDomain::new(vec![6, 5]),
+        HRect::new(vec![6, 5]),
         vec![vec![0, 0], vec![4, 2], vec![5, 4]],
     );
 
@@ -125,7 +125,7 @@ fn a_coo_goes_from_its_box_to_the_positions_it_stores() {
 
 #[test]
 fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
-    let diagonal = Diagonal::new(BoxDomain::new(vec![6, 4, 6]));
+    let diagonal = Diagonal::new(HRect::new(vec![6, 4, 6]));
 
     assert_eq!(diagonal.domain().ndim(), 3);
     assert!(diagonal.domain().contains(&[3, 3, 3]));
@@ -136,7 +136,7 @@ fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
 
 #[test]
 fn a_permutation_reorders_its_domain_and_keeps_its_codomain() {
-    let permutation = Permutation::new(BoxDomain::new(vec![2, 3, 4]), vec![2, 0, 1]);
+    let permutation = Permutation::new(HRect::new(vec![2, 3, 4]), vec![2, 0, 1]);
 
     // Axis 2 of the codomain becomes axis 0 of the domain, and so on, so the
     // domain is the codomain's shape read through `axes`.
@@ -151,7 +151,7 @@ fn a_permutation_reorders_its_domain_and_keeps_its_codomain() {
 
 #[test]
 fn an_empty_mapping_keeps_the_domain_and_codomain_it_was_given() {
-    let empty = EmptyMapping::new(BoxDomain::new(vec![6]), BoxDomain::new(vec![0]));
+    let empty = EmptyMapping::new(HRect::new(vec![6]), HRect::new(vec![0]));
 
     assert!(empty.domain().contains(&[5]));
     assert!(!empty.domain().contains(&[6]));
@@ -160,31 +160,31 @@ fn an_empty_mapping_keeps_the_domain_and_codomain_it_was_given() {
 }
 
 #[test]
-fn a_physical_tensor_is_defined_on_the_box_of_its_storage() {
+fn a_physical_tensor_is_defined_on_the_hrect_of_its_storage() {
     let physical = physical();
 
     assert_eq!(physical.domain().ndim(), 1);
     assert!(physical.domain().contains(&[5]));
     assert!(!physical.domain().contains(&[6]));
-    assert_eq!(physical.box_domain().shape(), &[6]);
+    assert_eq!(physical.hrect_domain().shape(), &[6]);
 }
 
 #[test]
 fn a_right_composition_takes_its_domain_from_its_mapping() {
     let strided = Rc::new(RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     ));
     let transposed = RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![2, 3]), vec![3, 1])),
+        Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![3, 1])),
     );
 
-    assert_eq!(strided.box_domain().shape(), &[3, 2]);
+    assert_eq!(strided.hrect_domain().shape(), &[3, 2]);
     assert!(strided.domain().contains(&[2, 1]));
     assert!(!strided.domain().contains(&[2, 2]));
     // The same storage under a mapping of another shape is another domain.
-    assert_eq!(transposed.box_domain().shape(), &[2, 3]);
+    assert_eq!(transposed.hrect_domain().shape(), &[2, 3]);
     assert!(transposed.domain().contains(&[1, 2]));
 }
 
@@ -192,48 +192,51 @@ fn a_right_composition_takes_its_domain_from_its_mapping() {
 fn a_reduction_takes_its_domain_from_its_mapping() {
     let sparse = Sum::new(
         physical(),
-        Rc::new(COO::new(BoxDomain::new(vec![2, 3]), vec![vec![0, 0]])),
+        Rc::new(COO::new(HRect::new(vec![2, 3]), vec![vec![0, 0]])),
     );
     let diagonal = Sum::new(
         physical(),
-        Rc::new(Diagonal::new(BoxDomain::new(vec![4, 4, 4]))),
+        Rc::new(Diagonal::new(HRect::new(vec![4, 4, 4]))),
     );
 
-    assert_eq!(sparse.box_domain().shape(), &[2, 3]);
+    assert_eq!(sparse.hrect_domain().shape(), &[2, 3]);
     assert!(!sparse.domain().contains(&[2, 0]));
-    assert_eq!(diagonal.box_domain().shape(), &[4, 4, 4]);
+    assert_eq!(diagonal.hrect_domain().shape(), &[4, 4, 4]);
 }
 
 #[test]
 fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
     let strided = Rc::new(RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     ));
     let squared = LeftComposition::new(strided.clone(), |x| x * x);
 
-    assert_eq!(squared.box_domain().shape(), strided.box_domain().shape());
+    assert_eq!(
+        squared.hrect_domain().shape(),
+        strided.hrect_domain().shape()
+    );
     assert!(squared.domain().contains(&[2, 1]));
     assert!(!squared.domain().contains(&[3, 0]));
     assert_eq!(squared.get(&[2, 1]), 36.0);
 }
 
 #[test]
-fn boxed_tensors_print_through_their_box() {
+fn boxed_tensors_print_through_their_hrect() {
     let strided = RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     );
 
     assert_eq!(format_boxed(&strided), strided.to_string());
     assert_eq!(format_boxed(&*physical()), "tensor([1, 2, 3, 4, 5, 6])");
 }
 
-// A tensor composed over a mapping whose domain is not a box reads fine, but
+// A tensor composed over a mapping whose domain is not a hrect reads fine, but
 // neither `Display` nor `BoxedTensor` is implemented for it:
-// `unboxed.to_string()` and `unboxed.box_domain()` do not compile.
+// `unboxed.to_string()` and `unboxed.hrect_domain()` do not compile.
 #[test]
-fn a_tensor_over_a_domain_that_is_not_a_box_still_reads() {
+fn a_tensor_over_a_domain_that_is_not_a_hrect_still_reads() {
     let layout = Rc::new(TriangularLayout::new(3));
 
     // The layout is both an IndexMapping and a PowersetMapping, so its
@@ -249,10 +252,10 @@ fn a_tensor_over_a_domain_that_is_not_a_box_still_reads() {
     assert_eq!(unboxed.get(&[2, 1]), 5.0);
 }
 
-// Same for a reduction over a mapping whose domain is not a box, and for a
+// Same for a reduction over a mapping whose domain is not a hrect, and for a
 // transform of the tensor that comes out: neither is printable.
 #[test]
-fn a_reduction_over_a_domain_that_is_not_a_box_still_reads() {
+fn a_reduction_over_a_domain_that_is_not_a_hrect_still_reads() {
     let unboxed = Rc::new(Sum::new(physical(), Rc::new(TriangularLayout::new(3))));
     let squared = LeftComposition::new(unboxed.clone(), |x| x * x);
 

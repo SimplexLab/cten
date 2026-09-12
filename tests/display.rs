@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bten::{BoxDomain, COO, Diagonal, Physical, RightComposition, Stride, Sum, Sup, Tensor};
+use bten::{COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor};
 
 fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
@@ -15,7 +15,7 @@ fn a_physical_vector_prints_flat() {
 fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
     let strided = RightComposition::new(
         physical(),
-        Rc::new(Stride::new(BoxDomain::new(vec![3, 2]), vec![1, 3])),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     );
 
     assert_eq!(
@@ -29,7 +29,7 @@ fn values_are_right_aligned_to_a_common_width() {
     let wide = Rc::new(Physical::new(vec![1.0, 16.0, 4.0, 25.0]));
     let strided = RightComposition::new(
         wide,
-        Rc::new(Stride::new(BoxDomain::new(vec![2, 2]), vec![1, 2])),
+        Rc::new(Stride::new(HRect::new(vec![2, 2]), vec![1, 2])),
     );
 
     assert_eq!(strided.to_string(), "tensor([[ 1,  4],\n        [16, 25]])");
@@ -38,7 +38,7 @@ fn values_are_right_aligned_to_a_common_width() {
 #[test]
 fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
     let coo = Rc::new(COO::new(
-        BoxDomain::new(vec![2, 2]),
+        HRect::new(vec![2, 2]),
         vec![vec![0, 0], vec![1, 1]],
     ));
     let sup = Sup::new(physical(), coo);
@@ -53,7 +53,7 @@ fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
 fn rank_three_tensors_separate_blocks_with_a_blank_line() {
     let diag = Sum::new(
         physical(),
-        Rc::new(Diagonal::new(BoxDomain::new(vec![2, 2, 2]))),
+        Rc::new(Diagonal::new(HRect::new(vec![2, 2, 2]))),
     );
 
     assert_eq!(
@@ -73,7 +73,7 @@ fn display_agrees_with_direct_lookups() {
     let sparse = Sum::new(
         physical(),
         Rc::new(COO::new(
-            BoxDomain::new(vec![2, 3]),
+            HRect::new(vec![2, 3]),
             vec![vec![0, 0], vec![1, 2]],
         )),
     );
