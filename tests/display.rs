@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use bten::{COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor};
+use bten::{
+    COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor, format_boxed,
+};
 
 fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
@@ -88,4 +90,15 @@ fn display_agrees_with_direct_lookups() {
             );
         }
     }
+}
+
+#[test]
+fn boxed_tensors_print_through_their_hrect() {
+    let strided = RightComposition::new(
+        physical(),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
+    );
+
+    assert_eq!(format_boxed(&strided), strided.to_string());
+    assert_eq!(format_boxed(&*physical()), "tensor([1, 2, 3, 4, 5, 6])");
 }
