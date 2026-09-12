@@ -55,7 +55,7 @@ impl Tensor for Physical {
 }
 
 impl BoxedTensor for Physical {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
@@ -88,8 +88,8 @@ impl<M: IndexMapping + ?Sized> Tensor for RightComposition<M> {
 }
 
 impl<M: BoxedMapping + ?Sized> BoxedTensor for RightComposition<M> {
-    fn hrect_domain(&self) -> &HRect {
-        self.mapping.hrect_domain()
+    fn hrect(&self) -> &HRect {
+        self.mapping.hrect()
     }
 }
 
@@ -120,8 +120,8 @@ impl<T: Tensor + ?Sized> Tensor for LeftComposition<T> {
 }
 
 impl<T: BoxedTensor + ?Sized> BoxedTensor for LeftComposition<T> {
-    fn hrect_domain(&self) -> &HRect {
-        self.u.hrect_domain()
+    fn hrect(&self) -> &HRect {
+        self.u.hrect()
     }
 }
 
@@ -202,8 +202,8 @@ impl<R: Reduction, M: PowersetMapping + ?Sized> Tensor for ReductionTensor<R, M>
 }
 
 impl<R: Reduction, M: BoxedPowersetMapping + ?Sized> BoxedTensor for ReductionTensor<R, M> {
-    fn hrect_domain(&self) -> &HRect {
-        self.mapping.hrect_domain()
+    fn hrect(&self) -> &HRect {
+        self.mapping.hrect()
     }
 }
 

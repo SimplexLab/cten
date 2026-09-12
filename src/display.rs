@@ -14,13 +14,13 @@ use crate::tensor::{
 /// A tensor whose domain is a hrect. Only these can be printed, since formatting
 /// walks a shape and visits every index of it.
 pub trait BoxedTensor: Tensor {
-    fn hrect_domain(&self) -> &HRect;
+    fn hrect(&self) -> &HRect;
 }
 
 /// Renders a boxed tensor. Every `Display` implementation below defers to this,
 /// and each is written for the boxed instantiation of its tensor only.
 pub fn format_boxed(tensor: &dyn BoxedTensor) -> String {
-    format_tensor(tensor.hrect_domain().shape(), &|index| tensor.get(index))
+    format_tensor(tensor.hrect().shape(), &|index| tensor.get(index))
 }
 
 impl fmt::Display for Physical {

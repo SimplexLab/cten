@@ -41,7 +41,7 @@ pub fn permute<T: BoxedTensor + 'static>(
     u: Rc<T>,
     axes: Vec<usize>,
 ) -> RightComposition<Permutation> {
-    let codomain = u.hrect_domain().clone();
+    let codomain = u.hrect().clone();
     RightComposition::new(u, Rc::new(Permutation::new(codomain, axes)))
 }
 
@@ -81,7 +81,7 @@ pub fn movedim<T: BoxedTensor + 'static>(
 pub fn diagonalize<T: BoxedTensor + 'static>(u: Rc<T>, rank: usize) -> Sum<Diagonal> {
     assert_eq!(u.domain().ndim(), 1, "diagonalize takes a vector");
     assert!(rank > 0, "a diagonal tensor has at least one dimension");
-    let extent = u.hrect_domain().shape()[0];
+    let extent = u.hrect().shape()[0];
     Sum::new(u, Rc::new(Diagonal::new(HRect::new(vec![extent; rank]))))
 }
 

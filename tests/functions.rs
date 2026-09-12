@@ -111,7 +111,7 @@ fn clamp_rejects_a_nan_bound() {
 fn an_elementwise_transform_keeps_the_domain() {
     let squared = square(strided());
 
-    assert_eq!(squared.hrect_domain().shape(), &[3, 2]);
+    assert_eq!(squared.hrect().shape(), &[3, 2]);
     assert_eq!(
         collect_2d(&squared, 3, 2),
         vec![vec![1.0, 16.0], vec![4.0, 25.0], vec![9.0, 36.0]]
@@ -124,7 +124,7 @@ fn permute_reorders_axes() {
     let permuted = permute(cube.clone(), vec![2, 0, 1]);
 
     // Axis 2 becomes axis 0, axis 0 becomes axis 1, axis 1 becomes axis 2.
-    assert_eq!(permuted.hrect_domain().shape(), &[4, 2, 3]);
+    assert_eq!(permuted.hrect().shape(), &[4, 2, 3]);
 
     for a in 0..4 {
         for b in 0..2 {
@@ -139,7 +139,7 @@ fn permute_reorders_axes() {
 fn transpose_swaps_the_last_two_axes() {
     let transposed = transpose(strided());
 
-    assert_eq!(transposed.hrect_domain().shape(), &[2, 3]);
+    assert_eq!(transposed.hrect().shape(), &[2, 3]);
     assert_eq!(
         collect_2d(&transposed, 2, 3),
         vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]
@@ -151,7 +151,7 @@ fn transpose_leaves_leading_axes_alone() {
     let cube = cube();
     let transposed = transpose(cube.clone());
 
-    assert_eq!(transposed.hrect_domain().shape(), &[2, 4, 3]);
+    assert_eq!(transposed.hrect().shape(), &[2, 4, 3]);
 
     for i in 0..2 {
         for j in 0..4 {
@@ -167,7 +167,7 @@ fn transpose_is_an_involution() {
     let original = strided();
     let restored = transpose(Rc::new(transpose(original.clone())));
 
-    assert_eq!(restored.hrect_domain().shape(), &[3, 2]);
+    assert_eq!(restored.hrect().shape(), &[3, 2]);
     assert_eq!(collect_2d(&restored, 3, 2), collect_2d(&*original, 3, 2));
 }
 
@@ -184,7 +184,7 @@ fn transpose_applies_to_a_tensor_with_no_strides() {
     ));
     let transposed = transpose(sparse.clone());
 
-    assert_eq!(transposed.hrect_domain().shape(), &[3, 2]);
+    assert_eq!(transposed.hrect().shape(), &[3, 2]);
     assert_eq!(transposed.get(&[1, 0]), 1.0);
     assert_eq!(transposed.get(&[2, 1]), 2.0);
     assert_eq!(transposed.get(&[0, 0]), 0.0);
@@ -202,7 +202,7 @@ fn movedim_follows_the_pytorch_convention() {
     let moved = movedim(cube.clone(), 0, 2);
 
     // Moving axis 0 to the end leaves the others in order: (2,3,4) -> (3,4,2).
-    assert_eq!(moved.hrect_domain().shape(), &[3, 4, 2]);
+    assert_eq!(moved.hrect().shape(), &[3, 4, 2]);
 
     for a in 0..3 {
         for b in 0..4 {
@@ -218,7 +218,7 @@ fn movedim_is_reversible() {
     let cube = cube();
     let restored = movedim(Rc::new(movedim(cube.clone(), 0, 2)), 2, 0);
 
-    assert_eq!(restored.hrect_domain().shape(), &[2, 3, 4]);
+    assert_eq!(restored.hrect().shape(), &[2, 3, 4]);
     for i in 0..2 {
         for j in 0..3 {
             for k in 0..4 {
@@ -232,7 +232,7 @@ fn movedim_is_reversible() {
 fn diagonalize_builds_a_diagonal_matrix() {
     let diagonal = diagonalize(physical(), 2);
 
-    assert_eq!(diagonal.hrect_domain().shape(), &[6, 6]);
+    assert_eq!(diagonal.hrect().shape(), &[6, 6]);
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { (i + 1) as f32 } else { 0.0 };
@@ -245,7 +245,7 @@ fn diagonalize_builds_a_diagonal_matrix() {
 fn diagonalize_generalises_to_higher_rank() {
     let diagonal = diagonalize(physical(), 3);
 
-    assert_eq!(diagonal.hrect_domain().shape(), &[6, 6, 6]);
+    assert_eq!(diagonal.hrect().shape(), &[6, 6, 6]);
     assert_eq!(diagonal.get(&[2, 2, 2]), 3.0);
     assert_eq!(diagonal.get(&[2, 2, 1]), 0.0);
     assert_eq!(diagonal.get(&[0, 1, 2]), 0.0);
@@ -259,7 +259,7 @@ fn zeros_and_ones_are_constant_at_any_rank() {
 
     let flat_zeros = zeros(vec![2, 3]);
     let flat_ones = ones(vec![2, 3]);
-    assert_eq!(flat_zeros.hrect_domain().shape(), &[2, 3]);
+    assert_eq!(flat_zeros.hrect().shape(), &[2, 3]);
     assert_eq!(collect_2d(&flat_zeros, 2, 3), vec![vec![0.0; 3]; 2]);
     assert_eq!(collect_2d(&flat_ones, 2, 3), vec![vec![1.0; 3]; 2]);
 
@@ -273,7 +273,7 @@ fn zeros_and_ones_are_constant_at_any_rank() {
 fn a_rank_zero_constant_is_a_scalar() {
     let one = ones(vec![]);
 
-    assert_eq!(one.hrect_domain().ndim(), 0);
+    assert_eq!(one.hrect().ndim(), 0);
     assert_eq!(one.get(&[]), 1.0);
     assert_eq!(one.to_string(), "tensor(1)");
     assert_eq!(zeros(vec![]).to_string(), "tensor(0)");
@@ -283,7 +283,7 @@ fn a_rank_zero_constant_is_a_scalar() {
 fn eye_is_the_identity() {
     let identity = eye(6);
 
-    assert_eq!(identity.hrect_domain().shape(), &[6, 6]);
+    assert_eq!(identity.hrect().shape(), &[6, 6]);
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { 1.0 } else { 0.0 };
@@ -297,13 +297,13 @@ fn eye_rect_puts_ones_on_the_diagonal_of_a_rectangle() {
     let wide = eye_rect(2, 4);
     let tall = eye_rect(4, 2);
 
-    assert_eq!(wide.hrect_domain().shape(), &[2, 4]);
+    assert_eq!(wide.hrect().shape(), &[2, 4]);
     assert_eq!(
         collect_2d(&wide, 2, 4),
         vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]]
     );
 
-    assert_eq!(tall.hrect_domain().shape(), &[4, 2]);
+    assert_eq!(tall.hrect().shape(), &[4, 2]);
     assert_eq!(
         collect_2d(&tall, 4, 2),
         vec![

@@ -77,7 +77,7 @@ fn a_physical_tensor_is_defined_on_the_hrect_of_its_storage() {
     assert_eq!(physical.domain().ndim(), 1);
     assert!(physical.domain().contains(&[5]));
     assert!(!physical.domain().contains(&[6]));
-    assert_eq!(physical.hrect_domain().shape(), &[6]);
+    assert_eq!(physical.hrect().shape(), &[6]);
 }
 
 #[test]
@@ -91,11 +91,11 @@ fn a_right_composition_takes_its_domain_from_its_mapping() {
         Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![3, 1])),
     );
 
-    assert_eq!(strided.hrect_domain().shape(), &[3, 2]);
+    assert_eq!(strided.hrect().shape(), &[3, 2]);
     assert!(strided.domain().contains(&[2, 1]));
     assert!(!strided.domain().contains(&[2, 2]));
     // The same storage under a mapping of another shape is another domain.
-    assert_eq!(transposed.hrect_domain().shape(), &[2, 3]);
+    assert_eq!(transposed.hrect().shape(), &[2, 3]);
     assert!(transposed.domain().contains(&[1, 2]));
 }
 
@@ -110,9 +110,9 @@ fn a_reduction_takes_its_domain_from_its_mapping() {
         Rc::new(Diagonal::new(HRect::new(vec![4, 4, 4]))),
     );
 
-    assert_eq!(sparse.hrect_domain().shape(), &[2, 3]);
+    assert_eq!(sparse.hrect().shape(), &[2, 3]);
     assert!(!sparse.domain().contains(&[2, 0]));
-    assert_eq!(diagonal.hrect_domain().shape(), &[4, 4, 4]);
+    assert_eq!(diagonal.hrect().shape(), &[4, 4, 4]);
 }
 
 #[test]
@@ -124,8 +124,8 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
     let squared = LeftComposition::new(strided.clone(), |x| x * x);
 
     assert_eq!(
-        squared.hrect_domain().shape(),
-        strided.hrect_domain().shape()
+        squared.hrect().shape(),
+        strided.hrect().shape()
     );
     assert!(squared.domain().contains(&[2, 1]));
     assert!(!squared.domain().contains(&[3, 0]));
@@ -134,7 +134,7 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
 
 // A tensor composed over a mapping whose domain is not a hrect reads fine, but
 // neither `Display` nor `BoxedTensor` is implemented for it:
-// `unboxed.to_string()` and `unboxed.hrect_domain()` do not compile.
+// `unboxed.to_string()` and `unboxed.hrect()` do not compile.
 #[test]
 fn a_tensor_over_a_domain_that_is_not_a_hrect_still_reads() {
     let layout = Rc::new(TriangularLayout::new(3));

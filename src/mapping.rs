@@ -17,7 +17,7 @@ pub trait IndexMapping {
 /// A mapping whose domain is a hrect. Composing a tensor over one of these gives
 /// a boxed tensor, hence a printable one.
 pub trait BoxedMapping: IndexMapping {
-    fn hrect_domain(&self) -> &HRect;
+    fn hrect(&self) -> &HRect;
 }
 
 /// A mapping sending each index of its domain to a set of indices of its
@@ -34,7 +34,7 @@ pub trait PowersetMapping {
 /// A powerset mapping whose domain is a hrect. Reducing over one of these gives a
 /// boxed tensor, hence a printable one.
 pub trait BoxedPowersetMapping: PowersetMapping {
-    fn hrect_domain(&self) -> &HRect;
+    fn hrect(&self) -> &HRect;
 }
 
 pub struct Stride {
@@ -94,7 +94,7 @@ impl IndexMapping for Stride {
 }
 
 impl BoxedMapping for Stride {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
@@ -154,7 +154,7 @@ impl IndexMapping for Permutation {
 }
 
 impl BoxedMapping for Permutation {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
@@ -185,7 +185,7 @@ impl PowersetMapping for EmptyMapping {
 }
 
 impl BoxedPowersetMapping for EmptyMapping {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
@@ -236,7 +236,7 @@ impl PowersetMapping for COO {
 }
 
 impl BoxedPowersetMapping for COO {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
@@ -281,7 +281,7 @@ impl PowersetMapping for Diagonal {
 }
 
 impl BoxedPowersetMapping for Diagonal {
-    fn hrect_domain(&self) -> &HRect {
+    fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
