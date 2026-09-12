@@ -21,10 +21,6 @@ impl BoxDomain {
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
-
-    pub fn cardinality(&self) -> usize {
-        self.shape.iter().product()
-    }
 }
 
 impl Domain for BoxDomain {

@@ -77,7 +77,6 @@ fn a_box_holds_exactly_the_indices_within_its_shape() {
 
     assert_eq!(box_domain.shape(), &[3, 2]);
     assert_eq!(box_domain.ndim(), 2);
-    assert_eq!(box_domain.cardinality(), 6);
     assert!(box_domain.contains(&[2, 1]));
     assert!(!box_domain.contains(&[3, 1]));
     assert!(!box_domain.contains(&[2, 2]));
@@ -93,7 +92,6 @@ fn a_one_dimensional_box_is_a_flat_range() {
     assert_eq!(box_domain.ndim(), 1);
     assert!(box_domain.contains(&[3]));
     assert!(!box_domain.contains(&[4]));
-    assert_eq!(box_domain.cardinality(), 4);
 }
 
 #[test]
