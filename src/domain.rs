@@ -7,9 +7,7 @@ pub trait Domain {
     fn contains(&self, index: &[usize]) -> bool;
 }
 
-/// A hyperrectangle of indices: coordinate `i` runs over `0..shape[i]`. This is
-/// the only concrete domain for now, and the only one a tensor can be printed
-/// over.
+/// A hyperrectangle of indices: coordinate `i` runs over `0..shape[i]`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BoxDomain {
     shape: Vec<usize>,
