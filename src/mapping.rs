@@ -81,7 +81,7 @@ impl IndexMapping for Stride {
         for (coord, stride) in index.iter().zip(&self.strides) {
             result += coord * stride;
         }
-        vec![result]
+        Vec::from([result])
     }
 
     fn domain(&self) -> &dyn Domain {
