@@ -37,9 +37,77 @@ pub trait BoxedPowersetMapping: PowersetMapping {
     fn hrect(&self) -> &HRect;
 }
 
-pub struct Stride {
+/// The pair of hrects a mapping between hyperrectangles runs between.
+pub struct Signature {
     domain: HRect,
     codomain: HRect,
+}
+
+impl Signature {
+    pub fn new(domain: HRect, codomain: HRect) -> Self {
+        Self { domain, codomain }
+    }
+}
+
+/// What a mapping between two hyperrectangles has to provide. Implementing this
+/// rather than `IndexMapping` gets the domain accessors and printability below
+/// for free; a mapping over a domain that is not a hrect implements
+/// `IndexMapping` directly instead, and is not printable.
+pub trait HRectMapping {
+    fn map(&self, index: &[usize]) -> Vec<usize>;
+
+    fn signature(&self) -> &Signature;
+}
+
+impl<M: HRectMapping> IndexMapping for M {
+    fn map(&self, index: &[usize]) -> Vec<usize> {
+        HRectMapping::map(self, index)
+    }
+
+    fn domain(&self) -> &dyn Domain {
+        &self.signature().domain
+    }
+
+    fn codomain(&self) -> &dyn Domain {
+        &self.signature().codomain
+    }
+}
+
+impl<M: HRectMapping> BoxedMapping for M {
+    fn hrect(&self) -> &HRect {
+        &self.signature().domain
+    }
+}
+
+/// The powerset counterpart of `HRectMapping`.
+pub trait HRectPowersetMapping {
+    fn map(&self, index: &[usize]) -> Powerset;
+
+    fn signature(&self) -> &Signature;
+}
+
+impl<M: HRectPowersetMapping> PowersetMapping for M {
+    fn map(&self, index: &[usize]) -> Powerset {
+        HRectPowersetMapping::map(self, index)
+    }
+
+    fn domain(&self) -> &dyn Domain {
+        &self.signature().domain
+    }
+
+    fn codomain(&self) -> &dyn Domain {
+        &self.signature().codomain
+    }
+}
+
+impl<M: HRectPowersetMapping> BoxedPowersetMapping for M {
+    fn hrect(&self) -> &HRect {
+        &self.signature().domain
+    }
+}
+
+pub struct Stride {
+    signature: Signature,
     strides: Vec<usize>,
 }
 
@@ -52,8 +120,7 @@ impl Stride {
         );
         let codomain = HRect::new(vec![flat_extent(domain.shape(), &strides)]);
         Self {
-            domain,
-            codomain,
+            signature: Signature::new(domain, codomain),
             strides,
         }
     }
@@ -75,7 +142,7 @@ fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
         .sum::<usize>()
 }
 
-impl IndexMapping for Stride {
+impl HRectMapping for Stride {
     fn map(&self, index: &[usize]) -> Vec<usize> {
         let mut result = 0;
         for (coord, stride) in index.iter().zip(&self.strides) {
@@ -84,24 +151,13 @@ impl IndexMapping for Stride {
         Vec::from([result])
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        &self.codomain
-    }
-}
-
-impl BoxedMapping for Stride {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
 pub struct Permutation {
-    domain: HRect,
-    codomain: HRect,
+    signature: Signature,
     axes: Vec<usize>,
 }
 
@@ -124,8 +180,7 @@ impl Permutation {
         }
         let shape = axes.iter().map(|&axis| codomain.shape()[axis]).collect();
         Self {
-            domain: HRect::new(shape),
-            codomain,
+            signature: Signature::new(HRect::new(shape), codomain),
             axes,
         }
     }
@@ -135,7 +190,7 @@ impl Permutation {
     }
 }
 
-impl IndexMapping for Permutation {
+impl HRectMapping for Permutation {
     fn map(&self, index: &[usize]) -> Vec<usize> {
         let mut result = vec![0; self.axes.len()];
         for (i, &axis) in self.axes.iter().enumerate() {
@@ -144,55 +199,35 @@ impl IndexMapping for Permutation {
         result
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        &self.codomain
-    }
-}
-
-impl BoxedMapping for Permutation {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
 pub struct EmptyMapping {
-    domain: HRect,
-    codomain: HRect,
+    signature: Signature,
 }
 
 impl EmptyMapping {
     pub fn new(domain: HRect, codomain: HRect) -> Self {
-        Self { domain, codomain }
+        Self {
+            signature: Signature::new(domain, codomain),
+        }
     }
 }
 
-impl PowersetMapping for EmptyMapping {
+impl HRectPowersetMapping for EmptyMapping {
     fn map(&self, _index: &[usize]) -> Powerset {
         Powerset::new()
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        &self.codomain
-    }
-}
-
-impl BoxedPowersetMapping for EmptyMapping {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
 pub struct COO {
-    domain: HRect,
-    codomain: HRect,
+    signature: Signature,
     inverse_coords: Vec<Vec<usize>>,
 }
 
@@ -200,8 +235,7 @@ impl COO {
     pub fn new(domain: HRect, inverse_coords: Vec<Vec<usize>>) -> Self {
         let codomain = HRect::new(vec![inverse_coords.len()]);
         Self {
-            domain,
-            codomain,
+            signature: Signature::new(domain, codomain),
             inverse_coords,
         }
     }
@@ -211,7 +245,7 @@ impl COO {
     }
 }
 
-impl PowersetMapping for COO {
+impl HRectPowersetMapping for COO {
     fn map(&self, index: &[usize]) -> Powerset {
         let mut result = Powerset::new();
         for (j, coords) in self.inverse_coords.iter().enumerate() {
@@ -226,24 +260,13 @@ impl PowersetMapping for COO {
         result
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        &self.codomain
-    }
-}
-
-impl BoxedPowersetMapping for COO {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
 pub struct Diagonal {
-    domain: HRect,
-    codomain: HRect,
+    signature: Signature,
 }
 
 impl Diagonal {
@@ -252,13 +275,12 @@ impl Diagonal {
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
         Self {
-            domain,
-            codomain: HRect::new(vec![extent]),
+            signature: Signature::new(domain, HRect::new(vec![extent])),
         }
     }
 }
 
-impl PowersetMapping for Diagonal {
+impl HRectPowersetMapping for Diagonal {
     fn map(&self, index: &[usize]) -> Powerset {
         let mut result = Powerset::new();
         let first = index[0];
@@ -271,17 +293,7 @@ impl PowersetMapping for Diagonal {
         result
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        &self.codomain
-    }
-}
-
-impl BoxedPowersetMapping for Diagonal {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
