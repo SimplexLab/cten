@@ -37,17 +37,28 @@ pub trait BoxedPowersetMapping: PowersetMapping {
     fn hrect(&self) -> &HRect;
 }
 
-/// The pair of hrects a mapping between hyperrectangles runs between.
-pub struct Signature {
-    domain: HRect,
-    codomain: HRect,
+/// The domain and codomain a mapping runs between.
+pub struct Signature<D: Domain, C: Domain> {
+    domain: D,
+    codomain: C,
 }
 
-impl Signature {
-    pub fn new(domain: HRect, codomain: HRect) -> Self {
+impl<D: Domain, C: Domain> Signature<D, C> {
+    pub fn new(domain: D, codomain: C) -> Self {
         Self { domain, codomain }
     }
+
+    pub fn domain(&self) -> &D {
+        &self.domain
+    }
+
+    pub fn codomain(&self) -> &C {
+        &self.codomain
+    }
 }
+
+/// The signature of a mapping between two hyperrectangles.
+pub type HRectSignature = Signature<HRect, HRect>;
 
 /// What a mapping between two hyperrectangles has to provide. Implementing this
 /// rather than `IndexMapping` gets the domain accessors and printability below
@@ -56,7 +67,7 @@ impl Signature {
 pub trait HRectMapping {
     fn map(&self, index: &[usize]) -> Vec<usize>;
 
-    fn signature(&self) -> &Signature;
+    fn signature(&self) -> &HRectSignature;
 }
 
 impl<M: HRectMapping> IndexMapping for M {
@@ -65,17 +76,17 @@ impl<M: HRectMapping> IndexMapping for M {
     }
 
     fn domain(&self) -> &dyn Domain {
-        &self.signature().domain
+        self.signature().domain()
     }
 
     fn codomain(&self) -> &dyn Domain {
-        &self.signature().codomain
+        self.signature().codomain()
     }
 }
 
 impl<M: HRectMapping> BoxedMapping for M {
     fn hrect(&self) -> &HRect {
-        &self.signature().domain
+        self.signature().domain()
     }
 }
 
@@ -83,7 +94,7 @@ impl<M: HRectMapping> BoxedMapping for M {
 pub trait HRectPowersetMapping {
     fn map(&self, index: &[usize]) -> Powerset;
 
-    fn signature(&self) -> &Signature;
+    fn signature(&self) -> &HRectSignature;
 }
 
 impl<M: HRectPowersetMapping> PowersetMapping for M {
@@ -92,22 +103,22 @@ impl<M: HRectPowersetMapping> PowersetMapping for M {
     }
 
     fn domain(&self) -> &dyn Domain {
-        &self.signature().domain
+        self.signature().domain()
     }
 
     fn codomain(&self) -> &dyn Domain {
-        &self.signature().codomain
+        self.signature().codomain()
     }
 }
 
 impl<M: HRectPowersetMapping> BoxedPowersetMapping for M {
     fn hrect(&self) -> &HRect {
-        &self.signature().domain
+        self.signature().domain()
     }
 }
 
 pub struct Stride {
-    signature: Signature,
+    signature: HRectSignature,
     strides: Vec<usize>,
 }
 
@@ -120,7 +131,7 @@ impl Stride {
         );
         let codomain = HRect::new(vec![flat_extent(domain.shape(), &strides)]);
         Self {
-            signature: Signature::new(domain, codomain),
+            signature: HRectSignature::new(domain, codomain),
             strides,
         }
     }
@@ -151,13 +162,13 @@ impl HRectMapping for Stride {
         Vec::from([result])
     }
 
-    fn signature(&self) -> &Signature {
+    fn signature(&self) -> &HRectSignature {
         &self.signature
     }
 }
 
 pub struct Permutation {
-    signature: Signature,
+    signature: HRectSignature,
     axes: Vec<usize>,
 }
 
@@ -180,7 +191,7 @@ impl Permutation {
         }
         let shape = axes.iter().map(|&axis| codomain.shape()[axis]).collect();
         Self {
-            signature: Signature::new(HRect::new(shape), codomain),
+            signature: HRectSignature::new(HRect::new(shape), codomain),
             axes,
         }
     }
@@ -199,19 +210,19 @@ impl HRectMapping for Permutation {
         result
     }
 
-    fn signature(&self) -> &Signature {
+    fn signature(&self) -> &HRectSignature {
         &self.signature
     }
 }
 
 pub struct EmptyMapping {
-    signature: Signature,
+    signature: HRectSignature,
 }
 
 impl EmptyMapping {
     pub fn new(domain: HRect, codomain: HRect) -> Self {
         Self {
-            signature: Signature::new(domain, codomain),
+            signature: HRectSignature::new(domain, codomain),
         }
     }
 }
@@ -221,13 +232,13 @@ impl HRectPowersetMapping for EmptyMapping {
         Powerset::new()
     }
 
-    fn signature(&self) -> &Signature {
+    fn signature(&self) -> &HRectSignature {
         &self.signature
     }
 }
 
 pub struct COO {
-    signature: Signature,
+    signature: HRectSignature,
     inverse_coords: Vec<Vec<usize>>,
 }
 
@@ -235,7 +246,7 @@ impl COO {
     pub fn new(domain: HRect, inverse_coords: Vec<Vec<usize>>) -> Self {
         let codomain = HRect::new(vec![inverse_coords.len()]);
         Self {
-            signature: Signature::new(domain, codomain),
+            signature: HRectSignature::new(domain, codomain),
             inverse_coords,
         }
     }
@@ -260,13 +271,13 @@ impl HRectPowersetMapping for COO {
         result
     }
 
-    fn signature(&self) -> &Signature {
+    fn signature(&self) -> &HRectSignature {
         &self.signature
     }
 }
 
 pub struct Diagonal {
-    signature: Signature,
+    signature: HRectSignature,
 }
 
 impl Diagonal {
@@ -275,7 +286,7 @@ impl Diagonal {
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
         Self {
-            signature: Signature::new(domain, HRect::new(vec![extent])),
+            signature: HRectSignature::new(domain, HRect::new(vec![extent])),
         }
     }
 }
@@ -293,7 +304,7 @@ impl HRectPowersetMapping for Diagonal {
         result
     }
 
-    fn signature(&self) -> &Signature {
+    fn signature(&self) -> &HRectSignature {
         &self.signature
     }
 }
