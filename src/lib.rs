@@ -14,8 +14,8 @@ pub use functions::{
     transpose, zeros,
 };
 pub use mapping::{
-    BoxedMapping, BoxedPowersetMapping, COO, Diagonal, EmptyMapping, IndexMapping, Permutation,
-    Powerset, PowersetMapping, Stride,
+    BoxedMapping, BoxedPowersetMapping, COO, Diagonal, EmptyMapping, HRectSignature, IndexMapping,
+    Permutation, Powerset, PowersetMapping, Signature, Stride,
 };
 pub use tensor::{
     Inf, InfReduction, LeftComposition, Physical, Product, ProductReduction, Reduction,
