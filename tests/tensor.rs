@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxedTensor, COO, Diagonal, HRect, LeftComposition, Physical, RightComposition, Stride, Sum,
-    Tensor,
+    BoxedTensor, COO, Diagonal, HRect, JaggedTensor, LeftComposition, Physical, RightComposition,
+    Stride, Sum, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -66,4 +66,21 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
     assert!(squared.domain().contains(&[2, 1]));
     assert!(!squared.domain().contains(&[3, 0]));
     assert_eq!(squared.get(&[2, 1]), 36.0);
+}
+
+#[test]
+fn a_jagged_tensor_reads_each_part_under_its_first_coordinate() {
+    let jagged = JaggedTensor::new(vec![physical(), Rc::new(Physical::new(vec![10.0, 20.0]))]);
+
+    assert_eq!(jagged.get(&[0, 4]), 5.0);
+    assert_eq!(jagged.get(&[1, 1]), 20.0);
+    // Its domain is the two storages side by side, each keeping its own length.
+    assert_eq!(jagged.domain().ndim(), 2);
+    assert!(jagged.domain().contains(&[0, 5]));
+    assert!(jagged.domain().contains(&[1, 1]));
+    assert!(!jagged.domain().contains(&[1, 2]));
+    assert_eq!(
+        jagged.jagged_domain().parts(),
+        &[HRect::new(vec![6]), HRect::new(vec![2])]
+    );
 }

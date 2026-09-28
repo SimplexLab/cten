@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
-use crate::domain::{Domain, HRect};
+use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
 /// A mapping from an index set to a value set. The index set is the tensor's
@@ -56,6 +56,35 @@ impl Tensor for Physical {
 
 impl BoxedTensor for Physical {
     fn hrect(&self) -> &HRect {
+        &self.domain
+    }
+}
+
+/// Several tensors read as one: `[t, rest..]` reads part `t` at `rest`. This is
+/// the underlying that concatenating, stacking and `where` remap into. Its domain
+/// is jagged rather than a hrect, so it is not printable.
+pub struct JaggedTensor {
+    parts: Vec<Rc<dyn BoxedTensor>>,
+    domain: JaggedDomain,
+}
+
+impl JaggedTensor {
+    pub fn new(parts: Vec<Rc<dyn BoxedTensor>>) -> Self {
+        let domain = JaggedDomain::new(parts.iter().map(|part| part.hrect().clone()).collect());
+        Self { parts, domain }
+    }
+
+    pub fn jagged_domain(&self) -> &JaggedDomain {
+        &self.domain
+    }
+}
+
+impl Tensor for JaggedTensor {
+    fn get(&self, index: &[usize]) -> f32 {
+        self.parts[index[0]].get(&index[1..])
+    }
+
+    fn domain(&self) -> &dyn Domain {
         &self.domain
     }
 }
