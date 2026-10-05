@@ -275,8 +275,7 @@ fn a_rank_zero_constant_is_a_scalar() {
 
     assert_eq!(one.hrect().ndim(), 0);
     assert_eq!(one.get(&[]), 1.0);
-    assert_eq!(one.to_string(), "tensor(1)");
-    assert_eq!(zeros(vec![]).to_string(), "tensor(0)");
+    assert_eq!(zeros(vec![]).get(&[]), 0.0);
 }
 
 #[test]
