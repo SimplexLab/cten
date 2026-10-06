@@ -6,9 +6,10 @@ use std::rc::Rc;
 
 use crate::display::BoxedTensor;
 use crate::domain::HRect;
-use crate::mapping::{Diagonal, EmptyMapping, Permutation};
+use crate::mapping::{COO, Concat, Diagonal, EmptyMapping, Permutation, Squeeze, Unsqueeze, Where};
 use crate::tensor::{
-    LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition, Sum, Tensor,
+    JaggedTensor, LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition,
+    Sum, Tensor,
 };
 
 pub fn square<T: Tensor + ?Sized>(u: Rc<T>) -> LeftComposition<T> {
@@ -75,6 +76,114 @@ pub fn movedim<T: BoxedTensor + 'static>(
     permute(u, axes)
 }
 
+/// Inserts an axis of extent 1 at `dim`, which can be anywhere from before the
+/// first axis to after the last.
+pub fn unsqueeze<T: BoxedTensor + 'static>(u: Rc<T>, dim: usize) -> RightComposition<Unsqueeze> {
+    let codomain = u.hrect().clone();
+    RightComposition::new(u, Rc::new(Unsqueeze::new(codomain, dim)))
+}
+
+/// The axes a function is told to act on, in place of torch's optional `dim`
+/// argument: `()` names every axis, a `usize` one axis, and an array, vector or
+/// slice several.
+pub trait Dims {
+    fn axes(self, ndim: usize) -> Vec<usize>;
+}
+
+impl Dims for () {
+    fn axes(self, ndim: usize) -> Vec<usize> {
+        (0..ndim).collect()
+    }
+}
+
+impl Dims for usize {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        vec![self]
+    }
+}
+
+impl<const N: usize> Dims for [usize; N] {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self.to_vec()
+    }
+}
+
+impl Dims for Vec<usize> {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self
+    }
+}
+
+impl Dims for &[usize] {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self.to_vec()
+    }
+}
+
+/// Drops axes of extent 1, as torch's `squeeze` does: `squeeze(u, ())` drops all
+/// of them, `squeeze(u, 1)` only axis 1, and `squeeze(u, [0, 2])` axes 0 and 2.
+/// A named axis whose extent isn't 1 is left alone.
+pub fn squeeze<T: BoxedTensor + 'static>(u: Rc<T>, dims: impl Dims) -> RightComposition<Squeeze> {
+    let codomain = u.hrect().clone();
+    let ndim = codomain.shape().len();
+    let named = dims.axes(ndim);
+    for (i, &axis) in named.iter().enumerate() {
+        assert!(axis < ndim, "dim {axis} is out of range");
+        assert!(
+            !named[..i].contains(&axis),
+            "dim {axis} is named more than once"
+        );
+    }
+    let removed = named
+        .into_iter()
+        .filter(|&axis| codomain.shape()[axis] == 1)
+        .collect();
+    RightComposition::new(u, Rc::new(Squeeze::new(codomain, removed)))
+}
+
+/// Joins tensors end to end along `dim`; their other extents must agree.
+pub fn concatenate(tensors: Vec<Rc<dyn BoxedTensor>>, dim: usize) -> RightComposition<Concat> {
+    assert!(!tensors.is_empty(), "concatenate needs at least one tensor");
+    let underlying = JaggedTensor::new(tensors);
+    let codomain = underlying.jagged_domain().clone();
+    RightComposition::new(Rc::new(underlying), Rc::new(Concat::new(codomain, dim)))
+}
+
+/// Joins tensors of one shape along a new axis at `dim`, by concatenating them
+/// once each has an axis of extent 1 there.
+pub fn stack(tensors: Vec<Rc<dyn BoxedTensor>>, dim: usize) -> RightComposition<Concat> {
+    assert!(!tensors.is_empty(), "stack needs at least one tensor");
+    let shape = tensors[0].hrect().clone();
+    assert!(
+        tensors.iter().all(|tensor| *tensor.hrect() == shape),
+        "stack needs tensors of one shape"
+    );
+    let unsqueezed = tensors
+        .into_iter()
+        .map(|tensor| {
+            let unsqueeze = Unsqueeze::new(tensor.hrect().clone(), dim);
+            Rc::new(RightComposition::new(tensor, Rc::new(unsqueeze))) as Rc<dyn BoxedTensor>
+        })
+        .collect();
+    concatenate(unsqueezed, dim)
+}
+
+/// Reads `input` where `condition` is not zero and `other` where it is. torch's
+/// `where` takes a boolean condition; bten's tensors hold floats, so zero stands
+/// for false. `where` is a Rust keyword, hence the underscore.
+pub fn where_(
+    condition: Rc<dyn BoxedTensor>,
+    input: Rc<dyn BoxedTensor>,
+    other: Rc<dyn BoxedTensor>,
+) -> RightComposition<Where> {
+    let underlying = JaggedTensor::new(vec![input, other]);
+    let codomain = underlying.jagged_domain().clone();
+    RightComposition::new(
+        Rc::new(underlying),
+        Rc::new(Where::new(codomain, condition)),
+    )
+}
+
 /// Spreads a vector over the diagonal of a tensor of the given rank: rank two
 /// gives a diagonal matrix, rank three a tensor whose only non-zero indices
 /// are of the form `[i, i, i]`.
@@ -112,4 +221,46 @@ pub fn eye_rect(rows: usize, cols: usize) -> Sum<Diagonal> {
 
 pub fn eye(n: usize) -> Sum<Diagonal> {
     eye_rect(n, n)
+}
+
+/// A sparse tensor of shape `size` holding `values` at the coordinates in
+/// `indices`, and zero everywhere else. As in torch, `indices` has one row per
+/// dimension, so column `k` is the coordinate of `values[k]`, and values at a
+/// repeated coordinate add up.
+pub fn sparse_coo_tensor(
+    indices: Vec<Vec<usize>>,
+    values: Rc<dyn BoxedTensor>,
+    size: Vec<usize>,
+) -> Sum<COO> {
+    assert_eq!(
+        indices.len(),
+        size.len(),
+        "sparse_coo_tensor needs one row of indices per dimension of size"
+    );
+    assert_eq!(
+        values.domain().ndim(),
+        1,
+        "sparse_coo_tensor takes a vector of values"
+    );
+    let count = values.hrect().shape()[0];
+    for row in &indices {
+        assert_eq!(
+            row.len(),
+            count,
+            "sparse_coo_tensor needs a coordinate for each of its {count} values"
+        );
+    }
+    let coordinates: Vec<Vec<usize>> = (0..count)
+        .map(|k| indices.iter().map(|row| row[k]).collect())
+        .collect();
+    for coordinate in &coordinates {
+        assert!(
+            coordinate
+                .iter()
+                .zip(&size)
+                .all(|(coord, extent)| coord < extent),
+            "coordinate {coordinate:?} lies outside size {size:?}"
+        );
+    }
+    Sum::new(values, Rc::new(COO::new(HRect::new(size), coordinates)))
 }
