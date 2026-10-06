@@ -3,7 +3,7 @@ use std::rc::Rc;
 use bten::{
     BoxedTensor, COO, Domain, HRect, Physical, RightComposition, Stride, Sum, Tensor, clamp,
     concatenate, diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow, scale,
-    sparse_coo_tensor, square, squeeze, squeeze_dim, stack, transpose, unsqueeze, where_, zeros,
+    sparse_coo_tensor, square, squeeze, stack, transpose, unsqueeze, where_, zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -33,6 +33,10 @@ fn matrix(rows: usize, cols: usize, values: Vec<f32>) -> Rc<RightComposition<Str
         Rc::new(Physical::new(values)),
         Rc::new(Stride::new(HRect::new(vec![rows, cols]), vec![cols, 1])),
     ))
+}
+
+fn collect_1d(tensor: &dyn Tensor, len: usize) -> Vec<f32> {
+    (0..len).map(|i| tensor.get(&[i])).collect()
 }
 
 fn collect_2d(tensor: &dyn Tensor, rows: usize, cols: usize) -> Vec<Vec<f32>> {
@@ -372,7 +376,7 @@ fn unsqueeze_then_squeeze_gives_the_tensor_back() {
     assert_eq!(unsqueezed.hrect().shape(), &[3, 1, 2]);
     assert_eq!(unsqueezed.get(&[2, 0, 1]), original.get(&[2, 1]));
 
-    let squeezed = squeeze(unsqueezed);
+    let squeezed = squeeze(unsqueezed, ());
     assert_eq!(squeezed.hrect().shape(), &[3, 2]);
     assert_eq!(collect_2d(&squeezed, 3, 2), collect_2d(&*original, 3, 2));
 }
@@ -381,32 +385,46 @@ fn unsqueeze_then_squeeze_gives_the_tensor_back() {
 fn unsqueeze_can_add_an_axis_before_the_first_or_after_the_last() {
     assert_eq!(unsqueeze(strided(), 0).hrect().shape(), &[1, 3, 2]);
     assert_eq!(unsqueeze(strided(), 2).hrect().shape(), &[3, 2, 1]);
-    // A vector with an axis in front is a matrix of one row, and prints as one.
+    // A vector with an axis in front is a matrix of one row.
+    let row = unsqueeze(physical(), 0);
     assert_eq!(
-        unsqueeze(physical(), 0).to_string(),
-        "tensor([[1, 2, 3, 4, 5, 6]])"
+        collect_2d(&row, 1, 6),
+        vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]
     );
 }
 
 #[test]
-fn squeeze_drops_every_axis_of_extent_one() {
-    let squeezed = squeeze(Rc::new(ones(vec![1, 3, 1, 2])));
+fn squeeze_with_no_dims_drops_every_axis_of_extent_one() {
+    let squeezed = squeeze(Rc::new(ones(vec![1, 3, 1, 2])), ());
     assert_eq!(squeezed.hrect().shape(), &[3, 2]);
     assert_eq!(squeezed.get(&[2, 1]), 1.0);
 
     // When every axis has extent one, what is left is a scalar.
-    let scalar = squeeze(Rc::new(ones(vec![1, 1])));
+    let scalar = squeeze(Rc::new(ones(vec![1, 1])), ());
     assert_eq!(scalar.hrect().ndim(), 0);
-    assert_eq!(scalar.to_string(), "tensor(1)");
+    assert_eq!(scalar.get(&[]), 1.0);
 }
 
-// torch leaves a squeeze of an axis longer than one as a no-op.
 #[test]
-fn squeeze_dim_leaves_an_axis_that_is_not_of_extent_one_alone() {
+fn squeeze_drops_only_the_axes_it_is_given() {
+    let tensor = || Rc::new(ones(vec![1, 3, 1, 2]));
+    let named: &[usize] = &[0, 2];
+
+    assert_eq!(squeeze(tensor(), 2).hrect().shape(), &[1, 3, 2]);
+    assert_eq!(squeeze(tensor(), [0, 2]).hrect().shape(), &[3, 2]);
+    assert_eq!(squeeze(tensor(), vec![2, 0]).hrect().shape(), &[3, 2]);
+    assert_eq!(squeeze(tensor(), named).hrect().shape(), &[3, 2]);
+}
+
+// torch leaves a named axis that is longer than one as it is.
+#[test]
+fn squeeze_leaves_a_named_axis_that_is_not_of_extent_one_alone() {
     let unsqueezed = Rc::new(unsqueeze(strided(), 0));
 
-    assert_eq!(squeeze_dim(unsqueezed.clone(), 0).hrect().shape(), &[3, 2]);
-    assert_eq!(squeeze_dim(unsqueezed, 1).hrect().shape(), &[1, 3, 2]);
+    assert_eq!(squeeze(unsqueezed.clone(), 0).hrect().shape(), &[3, 2]);
+    assert_eq!(squeeze(unsqueezed.clone(), 1).hrect().shape(), &[1, 3, 2]);
+    // Of several named axes, only those of extent one go.
+    assert_eq!(squeeze(unsqueezed, [0, 1]).hrect().shape(), &[3, 2]);
 }
 
 #[test]
@@ -417,8 +435,15 @@ fn unsqueeze_rejects_an_axis_past_the_end() {
 
 #[test]
 #[should_panic(expected = "out of range")]
-fn squeeze_dim_rejects_an_axis_out_of_range() {
-    squeeze_dim(strided(), 2);
+fn squeeze_rejects_an_axis_out_of_range() {
+    squeeze(strided(), 2);
+}
+
+// torch rejects a dim named twice as well.
+#[test]
+#[should_panic(expected = "named more than once")]
+fn squeeze_rejects_an_axis_named_twice() {
+    squeeze(Rc::new(ones(vec![1, 3])), [0, 0]);
 }
 
 #[test]
@@ -426,7 +451,10 @@ fn concatenate_joins_tensors_of_different_lengths_end_to_end() {
     let joined = concatenate(vec![physical(), Rc::new(Physical::new(vec![7.0, 8.0]))], 0);
 
     assert_eq!(joined.hrect().shape(), &[8]);
-    assert_eq!(joined.to_string(), "tensor([1, 2, 3, 4, 5, 6, 7, 8])");
+    assert_eq!(
+        collect_1d(&joined, 8),
+        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    );
 }
 
 // The parts need not be the same kind of tensor: here stored data meets a
@@ -435,7 +463,10 @@ fn concatenate_joins_tensors_of_different_lengths_end_to_end() {
 fn concatenate_joins_tensors_of_different_kinds() {
     let joined = concatenate(vec![physical(), Rc::new(zeros(vec![2]))], 0);
 
-    assert_eq!(joined.to_string(), "tensor([1, 2, 3, 4, 5, 6, 0, 0])");
+    assert_eq!(
+        collect_1d(&joined, 8),
+        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.0, 0.0]
+    );
 }
 
 #[test]
@@ -472,7 +503,7 @@ fn concatenate_passes_over_a_part_of_length_zero() {
     let joined = concatenate(vec![empty(), physical(), empty()], 0);
 
     assert_eq!(joined.hrect().shape(), &[6]);
-    assert_eq!(joined.to_string(), "tensor([1, 2, 3, 4, 5, 6])");
+    assert_eq!(collect_1d(&joined, 6), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -520,7 +551,10 @@ fn where_reads_input_where_the_condition_holds_and_other_elsewhere() {
     let condition = Rc::new(Physical::new(vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0]));
     let picked = where_(condition, physical(), Rc::new(negate(physical())));
 
-    assert_eq!(picked.to_string(), "tensor([ 1, -2, -3,  4, -5,  6])");
+    assert_eq!(
+        collect_1d(&picked, 6),
+        vec![1.0, -2.0, -3.0, 4.0, -5.0, 6.0]
+    );
 }
 
 // Zero reads as false, and so does negative zero, which equals it; anything
@@ -530,7 +564,7 @@ fn where_counts_any_condition_other_than_zero_as_true() {
     let condition = Rc::new(Physical::new(vec![-1.0, f32::NAN, 0.5, 0.0, -0.0, 0.0]));
     let picked = where_(condition, physical(), Rc::new(zeros(vec![6])));
 
-    assert_eq!(picked.to_string(), "tensor([1, 2, 3, 0, 0, 0])");
+    assert_eq!(collect_1d(&picked, 6), vec![1.0, 2.0, 3.0, 0.0, 0.0, 0.0]);
 }
 
 // The condition is a tensor like any other: here the identity keeps the
@@ -592,7 +626,8 @@ fn sparse_coo_tensor_is_the_demo_sparse_tensor() {
         vec![6, 5],
     );
 
-    assert_eq!(built.to_string(), by_hand.to_string());
+    assert_eq!(built.hrect().shape(), &[6, 5]);
+    assert_eq!(collect_2d(&built, 6, 5), collect_2d(&by_hand, 6, 5));
 }
 
 #[test]
@@ -603,7 +638,7 @@ fn sparse_coo_tensor_adds_up_values_at_a_repeated_coordinate() {
         vec![3],
     );
 
-    assert_eq!(sparse.to_string(), "tensor([7, 5, 0])");
+    assert_eq!(collect_1d(&sparse, 3), vec![7.0, 5.0, 0.0]);
 }
 
 #[test]

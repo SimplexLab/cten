@@ -83,30 +83,61 @@ pub fn unsqueeze<T: BoxedTensor + 'static>(u: Rc<T>, dim: usize) -> RightComposi
     RightComposition::new(u, Rc::new(Unsqueeze::new(codomain, dim)))
 }
 
-/// Drops every axis of extent 1.
-pub fn squeeze<T: BoxedTensor + 'static>(u: Rc<T>) -> RightComposition<Squeeze> {
-    let codomain = u.hrect().clone();
-    let removed = codomain
-        .shape()
-        .iter()
-        .enumerate()
-        .filter(|&(_, &extent)| extent == 1)
-        .map(|(axis, _)| axis)
-        .collect();
-    RightComposition::new(u, Rc::new(Squeeze::new(codomain, removed)))
+/// The axes a function is told to act on, in place of torch's optional `dim`
+/// argument: `()` names every axis, a `usize` one axis, and an array, vector or
+/// slice several.
+pub trait Dims {
+    fn axes(self, ndim: usize) -> Vec<usize>;
 }
 
-/// Drops axis `dim` if it has extent 1 and otherwise leaves the tensor as it is,
-/// as torch does.
-pub fn squeeze_dim<T: BoxedTensor + 'static>(u: Rc<T>, dim: usize) -> RightComposition<Squeeze> {
-    let ndim = u.domain().ndim();
-    assert!(dim < ndim, "dim {dim} is out of range");
+impl Dims for () {
+    fn axes(self, ndim: usize) -> Vec<usize> {
+        (0..ndim).collect()
+    }
+}
+
+impl Dims for usize {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        vec![self]
+    }
+}
+
+impl<const N: usize> Dims for [usize; N] {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self.to_vec()
+    }
+}
+
+impl Dims for Vec<usize> {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self
+    }
+}
+
+impl Dims for &[usize] {
+    fn axes(self, _ndim: usize) -> Vec<usize> {
+        self.to_vec()
+    }
+}
+
+/// Drops axes of extent 1, as torch's `squeeze` does: `squeeze(u, ())` drops all
+/// of them, `squeeze(u, 1)` only axis 1, and `squeeze(u, [0, 2])` axes 0 and 2.
+/// A named axis whose extent isn't 1 is left alone.
+pub fn squeeze<T: BoxedTensor + 'static>(u: Rc<T>, dims: impl Dims) -> RightComposition<Squeeze> {
     let codomain = u.hrect().clone();
-    let removed = if codomain.shape()[dim] == 1 {
-        vec![dim]
-    } else {
-        vec![]
-    };
+    let ndim = codomain.shape().len();
+    let named = dims.axes(ndim);
+    for (i, &axis) in named.iter().enumerate() {
+        assert!(axis < ndim, "dim {axis} is out of range");
+        assert!(
+            !named[..i].contains(&axis),
+            "dim {axis} is named more than once"
+        );
+    }
+    let removed = named
+        .into_iter()
+        .filter(|&axis| codomain.shape()[axis] == 1)
+        .collect();
     RightComposition::new(u, Rc::new(Squeeze::new(codomain, removed)))
 }
 
