@@ -518,3 +518,46 @@ impl HRectPowersetMapping for Diagonal {
         &self.signature
     }
 }
+
+/// The inverse of the projection dropping axis `dim`.
+/// e.g. with dim=1, f(m, p) = {[m n p]^T | n in [N]}
+/// Its inverse is just a projection: f^{-1}(m, n, p) = [m, p]^T for all n in [N]
+pub struct InvProjection {
+    signature: HRectSignature,
+    dim: usize,
+}
+
+impl InvProjection {
+    /// Takes the codomain: the domain is the same shape without `dim`.
+    pub fn new(codomain: HRect, dim: usize) -> Self {
+        assert!(
+            dim < codomain.ndim(),
+            "dim {dim} is out of range for a {}-dimensional hrect",
+            codomain.ndim()
+        );
+        let mut shape = codomain.shape().to_vec();
+        shape.remove(dim);
+        Self {
+            signature: HRectSignature::new(HRect::new(shape), codomain),
+            dim,
+        }
+    }
+}
+
+impl HRectPowersetMapping for InvProjection {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Powerset {
+        (0..self.signature.codomain().shape()[self.dim])
+            .map(|coord| {
+                let mut result = index.to_vec();
+                result.insert(self.dim, coord);
+                result
+            })
+            .collect()
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}
