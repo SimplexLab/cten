@@ -2,11 +2,14 @@
 //! Everything here is assembled from `mapping` and `tensor`; none of it adds
 //! machinery of its own.
 
+use std::assert_eq;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
 use crate::domain::HRect;
-use crate::mapping::{COO, Concat, Diagonal, EmptyMapping, Permutation, Squeeze, Unsqueeze, Where};
+use crate::mapping::{
+    COO, Concat, Diagonal, EmptyMapping, InvProjection, Permutation, Squeeze, Unsqueeze, Where,
+};
 use crate::tensor::{
     JaggedTensor, LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition,
     Sum, Tensor,
@@ -263,4 +266,14 @@ pub fn sparse_coo_tensor(
         );
     }
     Sum::new(values, Rc::new(COO::new(HRect::new(size), coordinates)))
+}
+
+pub fn sum<T: BoxedTensor + 'static>(input: Rc<T>, dim: usize) -> Sum<InvProjection> {
+    let codomain = input.hrect().clone();
+    Sum::new(input, Rc::new(InvProjection::new(codomain, dim)))
+}
+
+pub fn prod<T: BoxedTensor + 'static>(input: Rc<T>, dim: usize) -> Product<InvProjection> {
+    let codomain = input.hrect().clone();
+    Product::new(input, Rc::new(InvProjection::new(codomain, dim)))
 }
