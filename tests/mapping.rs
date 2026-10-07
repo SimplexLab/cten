@@ -1,8 +1,9 @@
-use std::rc::Rc;
+use std::{assert_eq, rc::Rc};
 
 use bten::{
-    COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, JaggedDomain, Permutation, Physical,
-    PowersetMapping, Squeeze, Stride, Unsqueeze, Where,
+    COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvProjection, JaggedDomain,
+    Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
+    Where,
 };
 
 #[test]
@@ -43,6 +44,31 @@ fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
     assert!(!diagonal.domain().contains(&[3, 5, 3]));
     assert!(diagonal.codomain().contains(&[3]));
     assert!(!diagonal.codomain().contains(&[4]));
+}
+
+#[test]
+fn a_projection_removes_dim_from_index() {
+    let proj = Projection::new(HRect::new(vec![2, 3, 4]), 1);
+
+    assert_eq!(proj.codomain().ndim(), 2);
+    assert!(proj.codomain().contains(&[1, 3]));
+    assert!(!proj.codomain().contains(&[1, 4]));
+    assert!(proj.domain().contains(&[1, 2, 3]));
+    assert_eq!(proj.map(&[1, 2, 3]), vec![1, 3])
+}
+
+#[test]
+fn an_inv_projection_sends_each_index_to_the_line_along_its_dim() {
+    let inv_proj = InvProjection::new(HRect::new(vec![2, 3, 4]), 1);
+
+    assert_eq!(inv_proj.domain().ndim(), 2);
+    assert!(inv_proj.domain().contains(&[1, 3]));
+    assert!(!inv_proj.domain().contains(&[1, 4]));
+    assert!(inv_proj.codomain().contains(&[1, 2, 3]));
+    assert_eq!(
+        inv_proj.map(&[1, 3]),
+        Powerset::from([vec![1, 0, 3], vec![1, 1, 3], vec![1, 2, 3]])
+    );
 }
 
 #[test]

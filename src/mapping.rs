@@ -518,3 +518,82 @@ impl HRectPowersetMapping for Diagonal {
         &self.signature
     }
 }
+
+/// Projection dropping axis `dim`.
+/// e.g. with dim=1, f(m, n, p) = [m, p]^T
+pub struct Projection {
+    signature: HRectSignature,
+    dim: usize,
+}
+
+impl Projection {
+    pub fn new(domain: HRect, dim: usize) -> Self {
+        assert!(
+            dim < domain.ndim(),
+            "dim {dim} is out of range for a {}-dimensional hrect",
+            domain.ndim()
+        );
+        let mut shape = domain.shape().to_vec();
+        shape.remove(dim);
+        Self {
+            signature: HRectSignature::new(domain, HRect::new(shape)),
+            dim,
+        }
+    }
+}
+
+impl HRectMapping for Projection {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Vec<usize> {
+        let mut result = index.to_vec();
+        result.remove(self.dim);
+        result
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}
+
+/// The inverse of the projection dropping axis `dim`.
+/// e.g. with dim=1, f(m, p) = {[m n p]^T | n in [N]}
+pub struct InvProjection {
+    signature: HRectSignature,
+    dim: usize,
+}
+
+impl InvProjection {
+    /// Takes the codomain: the domain is the same shape without `dim`.
+    pub fn new(codomain: HRect, dim: usize) -> Self {
+        assert!(
+            dim < codomain.ndim(),
+            "dim {dim} is out of range for a {}-dimensional hrect",
+            codomain.ndim()
+        );
+        let mut shape = codomain.shape().to_vec();
+        shape.remove(dim);
+        Self {
+            signature: HRectSignature::new(HRect::new(shape), codomain),
+            dim,
+        }
+    }
+}
+
+impl HRectPowersetMapping for InvProjection {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Powerset {
+        (0..self.signature.codomain().shape()[self.dim])
+            .map(|coord| {
+                let mut result = index.to_vec();
+                result.insert(self.dim, coord);
+                result
+            })
+            .collect()
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}

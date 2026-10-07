@@ -10,13 +10,14 @@ pub mod tensor;
 pub use display::{BoxedTensor, format_boxed};
 pub use domain::{Domain, HRect, JaggedDomain};
 pub use functions::{
-    Dims, clamp, concatenate, diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow,
-    scale, sparse_coo_tensor, square, squeeze, stack, transpose, unsqueeze, where_, zeros,
+    Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow,
+    prod, scale, sparse_coo_tensor, square, squeeze, stack, sum, transpose, unsqueeze, where_,
+    zeros,
 };
 pub use mapping::{
     BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, HRectSignature,
-    IndexMapping, Permutation, Powerset, PowersetMapping, Signature, Squeeze, Stride, Unsqueeze,
-    Where,
+    IndexMapping, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Signature,
+    Squeeze, Stride, Unsqueeze, Where,
 };
 pub use tensor::{
     Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product, ProductReduction,
