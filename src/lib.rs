@@ -15,8 +15,8 @@ pub use functions::{
 };
 pub use mapping::{
     BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, HRectSignature,
-    IndexMapping, InvProjection, Permutation, Powerset, PowersetMapping, Signature, Squeeze,
-    Stride, Unsqueeze, Where,
+    IndexMapping, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Signature,
+    Squeeze, Stride, Unsqueeze, Where,
 };
 pub use tensor::{
     Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product, ProductReduction,
