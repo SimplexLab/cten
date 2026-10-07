@@ -8,7 +8,8 @@ use std::rc::Rc;
 use crate::display::BoxedTensor;
 use crate::domain::HRect;
 use crate::mapping::{
-    COO, Concat, Diagonal, EmptyMapping, InvProjection, Permutation, Squeeze, Unsqueeze, Where,
+    COO, Concat, Diagonal, EmptyMapping, InvProjection, Permutation, Projection, Squeeze,
+    Unsqueeze, Where,
 };
 use crate::tensor::{
     JaggedTensor, LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition,
@@ -276,4 +277,36 @@ pub fn sum<T: BoxedTensor + 'static>(input: Rc<T>, dim: usize) -> Sum<InvProject
 pub fn prod<T: BoxedTensor + 'static>(input: Rc<T>, dim: usize) -> Product<InvProjection> {
     let codomain = input.hrect().clone();
     Product::new(input, Rc::new(InvProjection::new(codomain, dim)))
+}
+
+pub fn mm<T1: BoxedTensor + 'static, T2: BoxedTensor + 'static>(
+    mat1: Rc<T1>,
+    mat2: Rc<T2>,
+) -> Sum<InvProjection> {
+    assert_eq!(mat1.hrect().shape().len(), 2, "mat1 must be a matrix");
+    assert_eq!(mat2.hrect().shape().len(), 2, "mat2 must be a matrix");
+    assert_eq!(
+        mat1.hrect().shape()[1],
+        mat2.hrect().shape()[0],
+        "mat1 must have as many columns as mat2 has rows"
+    );
+
+    let m = mat1.hrect().shape()[0];
+    let n = mat1.hrect().shape()[1];
+    let p = mat2.hrect().shape()[1];
+    let latent_domain = HRect::new(vec![m, n, p]);
+    let stacked_latent_domain = HRect::new(vec![2, m, n, p]);
+
+    let phi1 = Rc::new(Projection::new(latent_domain.clone(), 2)); // phi1(m, n, p) = [m, n]^T
+    let phi2 = Rc::new(Projection::new(latent_domain.clone(), 0)); // phi2(m, n, p) = [n, p]^T
+    let latent_inv_proj = Rc::new(InvProjection::new(stacked_latent_domain, 0)); // l(2, m, n, p) = [m, n, p]^T
+    let psi_inv = Rc::new(InvProjection::new(latent_domain.clone(), 1)); // psi(m, n, p) = [m, p]^T
+
+    let latent_mat1 = Rc::new(RightComposition::new(mat1, phi1)); // shape [m, n, p]
+    let latent_mat2 = Rc::new(RightComposition::new(mat2, phi2)); // shape [m, n, p]
+    let stacked = Rc::new(stack(vec![latent_mat1, latent_mat2], 0)); // shape [2, m, n, p]
+
+    let prod_tensor = Rc::new(Product::new(stacked, latent_inv_proj)); // shape [m, n, p]
+
+    Sum::new(prod_tensor, psi_inv) // shape [m, p]
 }
