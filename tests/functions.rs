@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use bten::{
     BoxedTensor, COO, Domain, HRect, Physical, RightComposition, Stride, Sum, Tensor, clamp,
-    concatenate, diagonalize, eye, eye_rect, movedim, negate, ones, permute, pow, scale,
-    sparse_coo_tensor, square, squeeze, stack, transpose, unsqueeze, where_, zeros,
+    concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow, prod, scale,
+    sparse_coo_tensor, square, squeeze, stack, sum, transpose, unsqueeze, where_, zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -661,4 +661,33 @@ fn sparse_coo_tensor_rejects_the_wrong_number_of_rows() {
 #[should_panic(expected = "a coordinate for each")]
 fn sparse_coo_tensor_rejects_a_row_of_the_wrong_length() {
     sparse_coo_tensor(vec![vec![0, 1]], Rc::new(Physical::new(vec![1.0])), vec![3]);
+}
+
+#[test]
+fn sum_adds_up_along_a_dimension() {
+    let u = matrix(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+    assert_eq!(collect_1d(&sum(u.clone(), 0), 3), vec![5.0, 7.0, 9.0]);
+    assert_eq!(collect_1d(&sum(u, 1), 2), vec![6.0, 15.0]);
+}
+
+#[test]
+fn prod_multiplies_along_a_dimension() {
+    let u = matrix(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+    assert_eq!(collect_1d(&prod(u.clone(), 0), 3), vec![4.0, 10.0, 18.0]);
+    assert_eq!(collect_1d(&prod(u, 1), 2), vec![6.0, 120.0]);
+}
+
+#[test]
+fn mm_multiplies_matrices() {
+    let mat1 = matrix(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let mat2 = matrix(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+    let product = mm(mat1, mat2);
+
+    assert_eq!(product.hrect().shape(), &[2, 2]);
+    assert_eq!(
+        collect_2d(&product, 2, 2),
+        vec![vec![58.0, 64.0], vec![139.0, 154.0]]
+    );
 }
