@@ -2,8 +2,8 @@ use std::{assert_eq, rc::Rc};
 
 use bten::{
     COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvProjection, JaggedDomain,
-    Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
-    Where,
+    MultiTensor, Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stack,
+    Stride, Unsqueeze, Where,
 };
 
 #[test]
@@ -13,7 +13,7 @@ fn a_stride_goes_from_its_hrect_to_the_flat_positions_it_reaches() {
     assert!(stride.domain().contains(&[2, 1]));
     assert!(!stride.domain().contains(&[3, 0]));
     // The largest index is 2 * 1 + 1 * 3 = 5, so six positions are reached.
-    assert_eq!(stride.codomain().ndim(), 1);
+    assert_eq!(stride.codomain().ndim(), Some(1));
     assert!(stride.codomain().contains(&[5]));
     assert!(!stride.codomain().contains(&[6]));
     // A broadcasting stride reaches fewer positions than its domain has indices.
@@ -39,7 +39,7 @@ fn a_coo_goes_from_its_hrect_to_the_positions_it_stores() {
 fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
     let diagonal = Diagonal::new(HRect::new(vec![6, 4, 6]));
 
-    assert_eq!(diagonal.domain().ndim(), 3);
+    assert_eq!(diagonal.domain().ndim(), Some(3));
     assert!(diagonal.domain().contains(&[3, 3, 3]));
     assert!(!diagonal.domain().contains(&[3, 5, 3]));
     assert!(diagonal.codomain().contains(&[3]));
@@ -50,7 +50,7 @@ fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
 fn a_projection_removes_dim_from_index() {
     let proj = Projection::new(HRect::new(vec![2, 3, 4]), 1);
 
-    assert_eq!(proj.codomain().ndim(), 2);
+    assert_eq!(proj.codomain().ndim(), Some(2));
     assert!(proj.codomain().contains(&[1, 3]));
     assert!(!proj.codomain().contains(&[1, 4]));
     assert!(proj.domain().contains(&[1, 2, 3]));
@@ -61,7 +61,7 @@ fn a_projection_removes_dim_from_index() {
 fn an_inv_projection_sends_each_index_to_the_line_along_its_dim() {
     let inv_proj = InvProjection::new(HRect::new(vec![2, 3, 4]), 1);
 
-    assert_eq!(inv_proj.domain().ndim(), 2);
+    assert_eq!(inv_proj.domain().ndim(), Some(2));
     assert!(inv_proj.domain().contains(&[1, 3]));
     assert!(!inv_proj.domain().contains(&[1, 4]));
     assert!(inv_proj.codomain().contains(&[1, 2, 3]));
@@ -78,7 +78,7 @@ fn a_permutation_reorders_its_domain_and_keeps_its_codomain() {
     // Axis 2 of the codomain becomes axis 0 of the domain, and so on, so the
     // domain is the codomain's shape read through `axes`.
     assert_eq!(permutation.axes(), &[2, 0, 1]);
-    assert_eq!(permutation.domain().ndim(), 3);
+    assert_eq!(permutation.domain().ndim(), Some(3));
     assert!(permutation.domain().contains(&[3, 1, 2]));
     assert!(!permutation.domain().contains(&[4, 1, 2]));
     assert!(permutation.codomain().contains(&[1, 2, 3]));
@@ -110,7 +110,7 @@ fn an_unsqueeze_adds_an_axis_of_extent_one_to_its_codomain() {
 fn a_squeeze_drops_axes_of_extent_one_from_its_codomain() {
     let squeeze = Squeeze::new(HRect::new(vec![1, 3, 1]), vec![2, 0]);
 
-    assert_eq!(squeeze.domain().ndim(), 1);
+    assert_eq!(squeeze.domain().ndim(), Some(1));
     assert!(squeeze.domain().contains(&[2]));
     assert!(!squeeze.domain().contains(&[3]));
     assert!(squeeze.codomain().contains(&[0, 2, 0]));
@@ -135,7 +135,7 @@ fn a_concat_goes_from_a_hrect_to_the_jagged_domain_of_its_parts() {
     assert!(concat.domain().contains(&[1, 3]));
     assert!(!concat.domain().contains(&[1, 4]));
     assert!(!concat.domain().contains(&[2, 0]));
-    assert_eq!(concat.codomain().ndim(), 3);
+    assert_eq!(concat.codomain().ndim(), Some(3));
     // The part comes first, then the index within it.
     assert_eq!(concat.map(&[1, 2]), vec![0, 1, 2]);
     assert_eq!(concat.map(&[1, 3]), vec![1, 1, 0]);
@@ -151,16 +151,73 @@ fn a_concat_rejects_parts_whose_other_extents_differ() {
     );
 }
 
+// A multi-domain may mix ranks, but tensors joined end to end may not.
+#[test]
+#[should_panic(expected = "other extents agree")]
+fn a_concat_rejects_parts_of_different_ranks() {
+    Concat::new(
+        JaggedDomain::new(vec![HRect::new(vec![2, 3]), HRect::new(vec![2, 3, 1])]),
+        1,
+    );
+}
+
+#[test]
+fn a_stack_sends_each_index_through_the_mapping_its_first_coordinate_picks() {
+    let stack = Stack::new(vec![
+        Rc::new(Permutation::new(HRect::new(vec![2, 3]), vec![0, 1])),
+        Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![0, 1])),
+    ]);
+
+    // An axis in front of the shared domain picks the mapping.
+    assert!(stack.domain().contains(&[1, 1, 2]));
+    assert!(!stack.domain().contains(&[2, 0, 0]));
+    // One mapping lands on a matrix and the other on flat positions.
+    assert_eq!(stack.codomain().ndim(), None);
+    assert!(stack.codomain().contains(&[0, 1, 2]));
+    assert!(stack.codomain().contains(&[1, 2]));
+    assert_eq!(stack.map(&[0, 1, 2]), vec![0, 1, 2]);
+    assert_eq!(stack.map(&[1, 1, 2]), vec![1, 2]);
+}
+
+#[test]
+#[should_panic(expected = "one domain")]
+fn a_stack_rejects_mappings_of_different_domains() {
+    Stack::new(vec![
+        Rc::new(Permutation::new(HRect::new(vec![2, 3]), vec![0, 1])),
+        Rc::new(Permutation::new(HRect::new(vec![3, 2]), vec![0, 1])),
+    ]);
+}
+
 #[test]
 fn a_where_sends_each_index_to_the_part_its_condition_picks() {
     let picks = Where::new(
-        JaggedDomain::new(vec![HRect::new(vec![3]), HRect::new(vec![3])]),
+        HRect::new(vec![3]),
         Rc::new(Physical::new(vec![1.0, 0.0, 2.0])),
     );
 
     assert!(picks.domain().contains(&[2]));
     assert!(!picks.domain().contains(&[3]));
+    // The codomain is two copies of the domain, one per tensor picked from.
+    assert!(picks.codomain().contains(&[1, 2]));
+    assert!(!picks.codomain().contains(&[2, 0]));
     assert_eq!(picks.map(&[0]), vec![0, 0]);
     assert_eq!(picks.map(&[1]), vec![1, 1]);
     assert_eq!(picks.map(&[2]), vec![0, 2]);
+}
+
+#[test]
+fn a_where_can_pick_over_a_domain_that_is_not_a_hrect() {
+    let domain = JaggedDomain::new(vec![HRect::new(vec![2]), HRect::new(vec![1])]);
+    let condition = MultiTensor::new(vec![
+        Rc::new(Physical::new(vec![0.0, 1.0])),
+        Rc::new(Physical::new(vec![1.0])),
+    ]);
+    let picks = Where::new(domain, Rc::new(condition));
+
+    assert!(picks.domain().contains(&[1, 0]));
+    assert!(!picks.domain().contains(&[1, 1]));
+    assert_eq!(picks.codomain().ndim(), Some(3));
+    assert_eq!(picks.map(&[0, 0]), vec![1, 0, 0]);
+    assert_eq!(picks.map(&[0, 1]), vec![0, 0, 1]);
+    assert_eq!(picks.map(&[1, 0]), vec![0, 1, 0]);
 }

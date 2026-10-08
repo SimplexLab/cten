@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use bten::{
-    BoxedTensor, COO, Diagonal, HRect, JaggedTensor, LeftComposition, Physical, RightComposition,
+    BoxedTensor, COO, Diagonal, HRect, LeftComposition, MultiTensor, Physical, RightComposition,
     Stride, Sum, Tensor,
 };
 
@@ -13,7 +13,7 @@ fn physical() -> Rc<Physical> {
 fn a_physical_tensor_is_defined_on_the_hrect_of_its_storage() {
     let physical = physical();
 
-    assert_eq!(physical.domain().ndim(), 1);
+    assert_eq!(physical.domain().ndim(), Some(1));
     assert!(physical.domain().contains(&[5]));
     assert!(!physical.domain().contains(&[6]));
     assert_eq!(physical.hrect().shape(), &[6]);
@@ -69,18 +69,43 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
 }
 
 #[test]
-fn a_jagged_tensor_reads_each_part_under_its_first_coordinate() {
-    let jagged = JaggedTensor::new(vec![physical(), Rc::new(Physical::new(vec![10.0, 20.0]))]);
+fn a_multi_tensor_reads_each_part_under_its_first_coordinate() {
+    let multi = MultiTensor::new(vec![physical(), Rc::new(Physical::new(vec![10.0, 20.0]))]);
 
-    assert_eq!(jagged.get(&[0, 4]), 5.0);
-    assert_eq!(jagged.get(&[1, 1]), 20.0);
+    assert_eq!(multi.get(&[0, 4]), 5.0);
+    assert_eq!(multi.get(&[1, 1]), 20.0);
     // Its domain is the two storages side by side, each keeping its own length.
-    assert_eq!(jagged.domain().ndim(), 2);
-    assert!(jagged.domain().contains(&[0, 5]));
-    assert!(jagged.domain().contains(&[1, 1]));
-    assert!(!jagged.domain().contains(&[1, 2]));
-    assert_eq!(
-        jagged.jagged_domain().parts(),
-        &[HRect::new(vec![6]), HRect::new(vec![2])]
-    );
+    assert_eq!(multi.domain().ndim(), Some(2));
+    assert!(multi.domain().contains(&[0, 5]));
+    assert!(multi.domain().contains(&[1, 1]));
+    assert!(!multi.domain().contains(&[1, 2]));
+}
+
+#[test]
+fn a_multi_tensor_can_hold_parts_of_different_ranks() {
+    let matrix = Rc::new(RightComposition::new(
+        physical(),
+        Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
+    ));
+    let multi = MultiTensor::new(vec![matrix, Rc::new(Physical::new(vec![10.0, 20.0]))]);
+
+    assert_eq!(multi.get(&[0, 2, 1]), 6.0);
+    assert_eq!(multi.get(&[1, 1]), 20.0);
+    // Its indices are three or two coordinates long, so it has no one rank.
+    assert_eq!(multi.domain().ndim(), None);
+    assert!(multi.domain().contains(&[0, 2, 1]));
+    assert!(multi.domain().contains(&[1, 1]));
+    assert!(!multi.domain().contains(&[0, 2]));
+}
+
+// A part need not be printable: here one multi-tensor holds another.
+#[test]
+fn a_multi_tensor_can_hold_another_multi_tensor() {
+    let inner = MultiTensor::new(vec![physical(), Rc::new(Physical::new(vec![10.0, 20.0]))]);
+    let outer = MultiTensor::new(vec![Rc::new(inner), physical()]);
+
+    assert_eq!(outer.get(&[0, 1, 0]), 10.0);
+    assert_eq!(outer.get(&[1, 3]), 4.0);
+    assert!(outer.domain().contains(&[0, 0, 5]));
+    assert!(!outer.domain().contains(&[0, 1, 2]));
 }

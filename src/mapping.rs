@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::display::BoxedTensor;
-use crate::domain::{Domain, HRect, JaggedDomain};
+use crate::domain::{Domain, HRect, JaggedDomain, MultiDomain};
+use crate::tensor::Tensor;
 
 /// A set of indices, as returned by a `PowersetMapping`.
 pub type Powerset = HashSet<Vec<usize>>;
@@ -131,7 +131,7 @@ pub struct Stride {
 impl Stride {
     pub fn new(domain: HRect, strides: Vec<usize>) -> Self {
         assert_eq!(
-            domain.ndim(),
+            domain.shape().len(),
             strides.len(),
             "a stride per dimension of the domain is required"
         );
@@ -188,7 +188,7 @@ impl Permutation {
     pub fn new(codomain: HRect, axes: Vec<usize>) -> Self {
         assert_eq!(
             axes.len(),
-            codomain.ndim(),
+            codomain.shape().len(),
             "an axis per dimension of the codomain is required"
         );
         let mut seen = vec![false; axes.len()];
@@ -235,9 +235,9 @@ impl Unsqueeze {
     /// with an axis of extent 1 inserted at `dim`.
     pub fn new(codomain: HRect, dim: usize) -> Self {
         assert!(
-            dim <= codomain.ndim(),
+            dim <= codomain.shape().len(),
             "dim {dim} is out of range for a new axis of a {}-dimensional hrect",
-            codomain.ndim()
+            codomain.shape().len()
         );
         let mut shape = codomain.shape().to_vec();
         shape.insert(dim, 1);
@@ -276,7 +276,7 @@ impl Squeeze {
         removed.sort_unstable();
         removed.dedup();
         for &axis in &removed {
-            assert!(axis < codomain.ndim(), "axis {axis} is out of range");
+            assert!(axis < codomain.shape().len(), "axis {axis} is out of range");
             assert_eq!(
                 codomain.shape()[axis],
                 1,
@@ -284,7 +284,7 @@ impl Squeeze {
                 codomain.shape()[axis]
             );
         }
-        let shape = (0..codomain.ndim())
+        let shape = (0..codomain.shape().len())
             .filter(|axis| !removed.contains(axis))
             .map(|axis| codomain.shape()[axis])
             .collect();
@@ -311,7 +311,7 @@ impl HRectMapping for Squeeze {
     }
 }
 
-/// Reads tensors joined end to end along `dim` out of the jagged tensor holding
+/// Reads tensors joined end to end along `dim` out of the multi-tensor holding
 /// them. Every other coordinate passes through unchanged.
 pub struct Concat {
     signature: Signature<HRect, JaggedDomain>,
@@ -329,7 +329,8 @@ impl Concat {
         for part in parts {
             let shape = part.shape();
             assert!(
-                (0..first.len()).all(|axis| axis == dim || shape[axis] == first[axis]),
+                shape.len() == first.len()
+                    && (0..first.len()).all(|axis| axis == dim || shape[axis] == first[axis]),
                 "tensors can only be joined along dim {dim} when their other extents agree, got {first:?} and {shape:?}"
             );
         }
@@ -371,36 +372,29 @@ impl HRectMapping for Concat {
 
 /// Reads the first of two tensors where `condition` is not zero and the second
 /// where it is. Unlike the mappings above, where an index is sent depends on a
-/// tensor's values and not only on the index itself.
-pub struct Where {
-    signature: Signature<HRect, JaggedDomain>,
-    condition: Rc<dyn BoxedTensor>,
+/// tensor's values and not only on the index itself. The condition and both
+/// tensors share one domain, which can be of any kind; over a hrect, the
+/// result is printable.
+pub struct Where<D: Domain + Clone + 'static = HRect> {
+    signature: Signature<D, MultiDomain<D>>,
+    condition: Rc<dyn Tensor>,
 }
 
-impl Where {
-    /// Takes the codomain, the two tensors picked from. The domain is their
-    /// common shape, which `condition` must share.
-    pub fn new(codomain: JaggedDomain, condition: Rc<dyn BoxedTensor>) -> Self {
-        let parts = codomain.parts();
-        assert_eq!(parts.len(), 2, "where picks from exactly two tensors");
-        let shape = parts[0].clone();
-        assert!(
-            parts[1] == shape && *condition.hrect() == shape,
-            "where needs its condition and both tensors to have one shape, got {:?}, {:?} and {:?}",
-            condition.hrect().shape(),
-            parts[0].shape(),
-            parts[1].shape()
-        );
+impl<D: Domain + Clone + 'static> Where<D> {
+    /// Takes the domain the condition and both tensors share. The codomain is
+    /// two copies of it, one for each tensor picked from.
+    pub fn new(domain: D, condition: Rc<dyn Tensor>) -> Self {
+        let codomain = MultiDomain::new(vec![domain.clone(), domain.clone()]);
         Self {
-            signature: Signature::new(shape, codomain),
+            signature: Signature::new(domain, codomain),
             condition,
         }
     }
 }
 
-impl HRectMapping for Where {
-    type Codomain = JaggedDomain;
-
+// Implemented directly rather than through `HRectMapping`, since the domain need
+// not be a hrect.
+impl<D: Domain + Clone + 'static> IndexMapping for Where<D> {
     fn map(&self, index: &[usize]) -> Vec<usize> {
         // Zero reads as false and anything else, NaN included, as true.
         let part = if self.condition.get(index) != 0.0 {
@@ -414,7 +408,62 @@ impl HRectMapping for Where {
         result
     }
 
-    fn signature(&self) -> &Signature<HRect, JaggedDomain> {
+    fn domain(&self) -> &dyn Domain {
+        self.signature.domain()
+    }
+
+    fn codomain(&self) -> &dyn Domain {
+        self.signature.codomain()
+    }
+}
+
+impl BoxedMapping for Where<HRect> {
+    fn hrect(&self) -> &HRect {
+        self.signature.domain()
+    }
+}
+
+/// Several mappings of one domain read as one: `[i, rest..]` is sent by mapping
+/// `i`, into part `i` of a multi-tensor. Their codomains may differ in shape and
+/// even in rank, so tensors that can't be joined side by side directly can
+/// still be read as one, each through its own mapping.
+pub struct Stack {
+    signature: Signature<HRect, MultiDomain<Rc<dyn Domain>>>,
+    parts: Vec<Rc<dyn BoxedMapping>>,
+}
+
+impl Stack {
+    /// The domain is the mappings' common hrect, with an axis in front picking
+    /// the mapping. The codomain is the multi-domain of their codomains.
+    pub fn new(parts: Vec<Rc<dyn BoxedMapping>>) -> Self {
+        assert!(!parts.is_empty(), "a stack needs at least one mapping");
+        for part in &parts {
+            assert_eq!(
+                part.hrect(),
+                parts[0].hrect(),
+                "stacked mappings need one domain"
+            );
+        }
+        let mut shape = vec![parts.len()];
+        shape.extend_from_slice(parts[0].hrect().shape());
+        let codomain = MultiDomain::new(parts.iter().map(|part| part.codomain().to_rc()).collect());
+        Self {
+            signature: Signature::new(HRect::new(shape), codomain),
+            parts,
+        }
+    }
+}
+
+impl HRectMapping for Stack {
+    type Codomain = MultiDomain<Rc<dyn Domain>>;
+
+    fn map(&self, index: &[usize]) -> Vec<usize> {
+        let mut result = vec![index[0]];
+        result.extend(self.parts[index[0]].map(&index[1..]));
+        result
+    }
+
+    fn signature(&self) -> &Signature<HRect, MultiDomain<Rc<dyn Domain>>> {
         &self.signature
     }
 }
@@ -529,9 +578,9 @@ pub struct Projection {
 impl Projection {
     pub fn new(domain: HRect, dim: usize) -> Self {
         assert!(
-            dim < domain.ndim(),
+            dim < domain.shape().len(),
             "dim {dim} is out of range for a {}-dimensional hrect",
-            domain.ndim()
+            domain.shape().len()
         );
         let mut shape = domain.shape().to_vec();
         shape.remove(dim);
@@ -567,9 +616,9 @@ impl InvProjection {
     /// Takes the codomain: the domain is the same shape without `dim`.
     pub fn new(codomain: HRect, dim: usize) -> Self {
         assert!(
-            dim < codomain.ndim(),
+            dim < codomain.shape().len(),
             "dim {dim} is out of range for a {}-dimensional hrect",
-            codomain.ndim()
+            codomain.shape().len()
         );
         let mut shape = codomain.shape().to_vec();
         shape.remove(dim);

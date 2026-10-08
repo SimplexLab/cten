@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
-use crate::domain::{Domain, HRect, JaggedDomain};
+use crate::domain::{Domain, HRect, MultiDomain};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
 /// A mapping from an index set to a value set. The index set is the tensor's
@@ -13,18 +13,18 @@ pub trait Tensor {
     fn domain(&self) -> &dyn Domain;
 }
 
-/// Checks that a mapping lands on the indices the underlying tensor reads,
-/// which is all that can be checked without enumerating a domain. In
+/// Checks that a mapping lands on indices of the length the underlying tensor
+/// reads, which is all that can be checked without enumerating a domain. In
 /// particular, a mapping into flat positions needs a one-dimensional tensor
-/// under it.
+/// under it. A domain whose indices vary in length has no one rank to compare,
+/// so it passes.
 fn check_composable(codomain: &dyn Domain, u: &dyn Tensor) {
-    assert_eq!(
-        codomain.ndim(),
-        u.domain().ndim(),
-        "the mapping lands on {}-dimensional indices, but the underlying tensor is indexed by {} coordinates",
-        codomain.ndim(),
-        u.domain().ndim()
-    );
+    if let (Some(lands), Some(reads)) = (codomain.ndim(), u.domain().ndim()) {
+        assert_eq!(
+            lands, reads,
+            "the mapping lands on {lands}-dimensional indices, but the underlying tensor is indexed by {reads} coordinates"
+        );
+    }
 }
 
 pub struct Physical {
@@ -61,25 +61,22 @@ impl BoxedTensor for Physical {
 }
 
 /// Several tensors read as one: `[t, rest..]` reads part `t` at `rest`. This is
-/// the underlying that concatenating, stacking and `where` remap into. Its domain
-/// is jagged rather than a hrect, so it is not printable.
-pub struct JaggedTensor {
-    parts: Vec<Rc<dyn BoxedTensor>>,
-    domain: JaggedDomain,
+/// the underlying that concatenating, stacking and `where` remap into. The parts
+/// can be any tensors, of any rank; its domain is a multi-domain rather than a
+/// hrect, so it is not printable.
+pub struct MultiTensor {
+    parts: Vec<Rc<dyn Tensor>>,
+    domain: MultiDomain<Rc<dyn Domain>>,
 }
 
-impl JaggedTensor {
-    pub fn new(parts: Vec<Rc<dyn BoxedTensor>>) -> Self {
-        let domain = JaggedDomain::new(parts.iter().map(|part| part.hrect().clone()).collect());
+impl MultiTensor {
+    pub fn new(parts: Vec<Rc<dyn Tensor>>) -> Self {
+        let domain = MultiDomain::new(parts.iter().map(|part| part.domain().to_rc()).collect());
         Self { parts, domain }
     }
-
-    pub fn jagged_domain(&self) -> &JaggedDomain {
-        &self.domain
-    }
 }
 
-impl Tensor for JaggedTensor {
+impl Tensor for MultiTensor {
     fn get(&self, index: &[usize]) -> f32 {
         self.parts[index[0]].get(&index[1..])
     }

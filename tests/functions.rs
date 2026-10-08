@@ -285,7 +285,7 @@ fn zeros_and_ones_are_constant_at_any_rank() {
 fn a_rank_zero_constant_is_a_scalar() {
     let one = ones(vec![]);
 
-    assert_eq!(one.hrect().ndim(), 0);
+    assert_eq!(one.hrect().ndim(), Some(0));
     assert_eq!(one.get(&[]), 1.0);
     assert_eq!(zeros(vec![]).get(&[]), 0.0);
 }
@@ -401,7 +401,7 @@ fn squeeze_with_no_dims_drops_every_axis_of_extent_one() {
 
     // When every axis has extent one, what is left is a scalar.
     let scalar = squeeze(Rc::new(ones(vec![1, 1])), ());
-    assert_eq!(scalar.hrect().ndim(), 0);
+    assert_eq!(scalar.hrect().ndim(), Some(0));
     assert_eq!(scalar.get(&[]), 1.0);
 }
 

@@ -6,13 +6,13 @@ use std::assert_eq;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
-use crate::domain::HRect;
+use crate::domain::{HRect, JaggedDomain};
 use crate::mapping::{
     COO, Concat, Diagonal, EmptyMapping, InvProjection, Permutation, Projection, Squeeze,
     Unsqueeze, Where,
 };
 use crate::tensor::{
-    JaggedTensor, LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition,
+    LeftComposition, MultiTensor, Physical, Product, Reduction, ReductionTensor, RightComposition,
     Sum, Tensor,
 };
 
@@ -54,7 +54,7 @@ pub fn permute<T: BoxedTensor + 'static>(
 /// matrices transposes matrix by matrix. At rank two this is the plain
 /// transpose.
 pub fn transpose<T: BoxedTensor + 'static>(u: Rc<T>) -> RightComposition<Permutation> {
-    let ndim = u.domain().ndim();
+    let ndim = u.hrect().shape().len();
     assert!(ndim >= 2, "transpose needs at least two dimensions");
     let mut axes: Vec<usize> = (0..ndim).collect();
     axes.swap(ndim - 2, ndim - 1);
@@ -68,7 +68,7 @@ pub fn movedim<T: BoxedTensor + 'static>(
     source: usize,
     destination: usize,
 ) -> RightComposition<Permutation> {
-    let ndim = u.domain().ndim();
+    let ndim = u.hrect().shape().len();
     assert!(source < ndim, "source axis {source} is out of range");
     assert!(
         destination < ndim,
@@ -148,9 +148,20 @@ pub fn squeeze<T: BoxedTensor + 'static>(u: Rc<T>, dims: impl Dims) -> RightComp
 /// Joins tensors end to end along `dim`; their other extents must agree.
 pub fn concatenate(tensors: Vec<Rc<dyn BoxedTensor>>, dim: usize) -> RightComposition<Concat> {
     assert!(!tensors.is_empty(), "concatenate needs at least one tensor");
-    let underlying = JaggedTensor::new(tensors);
-    let codomain = underlying.jagged_domain().clone();
-    RightComposition::new(Rc::new(underlying), Rc::new(Concat::new(codomain, dim)))
+    let codomain = JaggedDomain::new(
+        tensors
+            .iter()
+            .map(|tensor| tensor.hrect().clone())
+            .collect(),
+    );
+    let parts = tensors
+        .into_iter()
+        .map(|tensor| tensor as Rc<dyn Tensor>)
+        .collect();
+    RightComposition::new(
+        Rc::new(MultiTensor::new(parts)),
+        Rc::new(Concat::new(codomain, dim)),
+    )
 }
 
 /// Joins tensors of one shape along a new axis at `dim`, by concatenating them
@@ -180,11 +191,17 @@ pub fn where_(
     input: Rc<dyn BoxedTensor>,
     other: Rc<dyn BoxedTensor>,
 ) -> RightComposition<Where> {
-    let underlying = JaggedTensor::new(vec![input, other]);
-    let codomain = underlying.jagged_domain().clone();
+    let shape = input.hrect().clone();
+    assert!(
+        *other.hrect() == shape && *condition.hrect() == shape,
+        "where needs its condition and both tensors to have one shape, got {:?}, {:?} and {:?}",
+        condition.hrect().shape(),
+        input.hrect().shape(),
+        other.hrect().shape()
+    );
     RightComposition::new(
-        Rc::new(underlying),
-        Rc::new(Where::new(codomain, condition)),
+        Rc::new(MultiTensor::new(vec![input, other])),
+        Rc::new(Where::new(shape, condition)),
     )
 }
 
@@ -192,7 +209,7 @@ pub fn where_(
 /// gives a diagonal matrix, rank three a tensor whose only non-zero indices
 /// are of the form `[i, i, i]`.
 pub fn diagonalize<T: BoxedTensor + 'static>(u: Rc<T>, rank: usize) -> Sum<Diagonal> {
-    assert_eq!(u.domain().ndim(), 1, "diagonalize takes a vector");
+    assert_eq!(u.hrect().shape().len(), 1, "diagonalize takes a vector");
     assert!(rank > 0, "a diagonal tensor has at least one dimension");
     let extent = u.hrect().shape()[0];
     Sum::new(u, Rc::new(Diagonal::new(HRect::new(vec![extent; rank]))))
@@ -242,7 +259,7 @@ pub fn sparse_coo_tensor(
         "sparse_coo_tensor needs one row of indices per dimension of size"
     );
     assert_eq!(
-        values.domain().ndim(),
+        values.hrect().shape().len(),
         1,
         "sparse_coo_tensor takes a vector of values"
     );

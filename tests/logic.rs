@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use bten::{
-    COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping, Product,
-    RightComposition, Stride, Sum, Sup, Tensor,
+    BoxedTensor, COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, MultiTensor,
+    Permutation, Physical, PowersetMapping, Product, RightComposition, Stack, Stride, Sum, Sup,
+    Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -286,4 +287,38 @@ fn a_powerset_mapping_can_be_used_directly() {
     assert_eq!(selected.len(), 1);
     assert!(selected.contains([4].as_slice()));
     assert!(diagonal.map(&[4, 5]).is_empty());
+}
+
+// A matrix and a vector can't be stacked as they are, having different ranks.
+// Held in one multi-tensor and read through a stack of mappings from a shared
+// domain, the matrix as it is and the vector broadcast along its rows, they
+// read as one boxed tensor.
+#[test]
+fn a_stack_reads_tensors_of_different_ranks_as_one() {
+    let matrix = Rc::new(RightComposition::new(
+        physical(),
+        Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![3, 1])),
+    ));
+    let vector = Rc::new(Physical::new(vec![10.0, 20.0, 30.0]));
+    let stack = Stack::new(vec![
+        Rc::new(Permutation::new(HRect::new(vec![2, 3]), vec![0, 1])),
+        Rc::new(Stride::new(HRect::new(vec![2, 3]), vec![0, 1])),
+    ]);
+    let stacked = RightComposition::new(
+        Rc::new(MultiTensor::new(vec![matrix, vector])),
+        Rc::new(stack),
+    );
+
+    assert_eq!(stacked.hrect().shape(), &[2, 2, 3]);
+    let expected = [
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        [[10.0, 20.0, 30.0], [10.0, 20.0, 30.0]],
+    ];
+    for (i, block) in expected.iter().enumerate() {
+        for (m, row) in block.iter().enumerate() {
+            for (n, &value) in row.iter().enumerate() {
+                assert_eq!(stacked.get(&[i, m, n]), value);
+            }
+        }
+    }
 }
