@@ -5,6 +5,7 @@ pub mod display;
 pub mod domain;
 pub mod functions;
 pub mod mapping;
+pub mod signature;
 pub mod tensor;
 
 pub use display::{BoxedTensor, format_boxed};
@@ -15,10 +16,11 @@ pub use functions::{
     zeros,
 };
 pub use mapping::{
-    BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, HRectSignature,
-    IndexMapping, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Signature,
-    Squeeze, Stride, Unsqueeze, Where,
+    BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
+    InvProjection, Permutation, Powerset, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
+    Where,
 };
+pub use signature::{HRectSignature, Signature};
 pub use tensor::{
     Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product, ProductReduction,
     Reduction, ReductionTensor, RightComposition, Sum, SumReduction, Sup, SupReduction, Tensor,

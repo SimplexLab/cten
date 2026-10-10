@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
+use crate::signature::{HRectSignature, Signature};
 
 /// A set of indices, as returned by a `PowersetMapping`.
 pub type Powerset = HashSet<Vec<usize>>;
@@ -38,29 +39,6 @@ pub trait PowersetMapping {
 pub trait BoxedPowersetMapping: PowersetMapping {
     fn hrect(&self) -> &HRect;
 }
-
-/// The domain and codomain a mapping runs between.
-pub struct Signature<D: Domain, C: Domain> {
-    domain: D,
-    codomain: C,
-}
-
-impl<D: Domain, C: Domain> Signature<D, C> {
-    pub fn new(domain: D, codomain: C) -> Self {
-        Self { domain, codomain }
-    }
-
-    pub fn domain(&self) -> &D {
-        &self.domain
-    }
-
-    pub fn codomain(&self) -> &C {
-        &self.codomain
-    }
-}
-
-/// The signature of a mapping between two hyperrectangles.
-pub type HRectSignature = Signature<HRect, HRect>;
 
 /// What a mapping from a hyperrectangle has to provide. Implementing this rather
 /// than `IndexMapping` gets the domain accessors and printability below for
@@ -557,7 +535,7 @@ impl HRectMapping for Projection {
 }
 
 /// The inverse of the projection dropping axis `dim`.
-/// e.g. with dim=1, f(m, p) = {[m n p]^T | n in [N]}
+/// e.g. with dim=1, f(m, p) = {[m n p]^T | n in \[N\]}
 pub struct InvProjection {
     signature: HRectSignature,
     dim: usize,
