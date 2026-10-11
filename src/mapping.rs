@@ -575,3 +575,134 @@ impl HRectPowersetMapping for InvProjection {
         &self.signature
     }
 }
+
+/// The affine map `x ↦ basis·x + offset`. `basis` has a row per dimension of the
+/// codomain and a column per dimension of the domain. Its entries and `offset`
+/// may be negative, as long as every index of the domain lands in the codomain.
+/// Read through this, a tensor gives its values on a lattice, e.g. its diagonal
+/// with `basis = [[1], [1]]`.
+pub struct Affine {
+    signature: HRectSignature,
+    basis: Vec<Vec<i64>>,
+    offset: Vec<i64>,
+}
+
+impl Affine {
+    pub fn new(domain: HRect, basis: Vec<Vec<i64>>, offset: Vec<i64>, codomain: HRect) -> Self {
+        assert_eq!(
+            basis.len(),
+            codomain.ndim(),
+            "a basis row per dimension of the codomain is required"
+        );
+        assert!(
+            basis.iter().all(|row| row.len() == domain.ndim()),
+            "a basis column per dimension of the domain is required"
+        );
+        assert_eq!(
+            offset.len(),
+            codomain.ndim(),
+            "an offset per dimension of the codomain is required"
+        );
+        // An empty domain has no index to land anywhere.
+        if !domain.shape().contains(&0) {
+            for (i, (row, &start)) in basis.iter().zip(&offset).enumerate() {
+                // Each coordinate varies on its own, so each term is at its
+                // smallest and largest at one end or the other of its range.
+                let (lowest, highest) = row.iter().zip(domain.shape()).fold(
+                    (start, start),
+                    |(low, high), (&step, &extent)| {
+                        let end = step * (extent as i64 - 1);
+                        (low + end.min(0), high + end.max(0))
+                    },
+                );
+                assert!(
+                    0 <= lowest && highest < codomain.shape()[i] as i64,
+                    "the lattice reaches {lowest} to {highest} along dimension {i}, which has extent {}",
+                    codomain.shape()[i]
+                );
+            }
+        }
+        Self {
+            signature: HRectSignature::new(domain, codomain),
+            basis,
+            offset,
+        }
+    }
+}
+
+impl HRectMapping for Affine {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Vec<usize> {
+        // Every coordinate is non-negative, as checked when constructing.
+        self.basis
+            .iter()
+            .zip(&self.offset)
+            .map(|(row, &start)| {
+                let coord = start
+                    + row
+                        .iter()
+                        .zip(index)
+                        .map(|(&step, &x)| step * x as i64)
+                        .sum::<i64>();
+                coord as usize
+            })
+            .collect()
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}
+
+/// The inverse of an `Affine`: sends each index of its codomain back to the
+/// indices of its domain that land on it. There are none off the lattice, so a
+/// sum over this lays its underlying tensor out on the lattice and is zero
+/// elsewhere: a sparse latticed tensor.
+pub struct InvAffine {
+    signature: HRectSignature,
+    affine: Affine,
+}
+
+impl InvAffine {
+    pub fn new(affine: Affine) -> Self {
+        let signature = HRectSignature::new(
+            affine.signature().codomain().clone(),
+            affine.signature().domain().clone(),
+        );
+        Self { signature, affine }
+    }
+}
+
+impl HRectPowersetMapping for InvAffine {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Powerset {
+        // A scan of the codomain, which holds for any basis, whether several
+        // indices land on `index` or none do.
+        indices(self.signature.codomain().shape())
+            .into_iter()
+            .filter(|x| HRectMapping::map(&self.affine, x) == index)
+            .collect()
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}
+
+/// Every index of a hrect of the given shape, in row-major order.
+fn indices(shape: &[usize]) -> Vec<Vec<usize>> {
+    shape.iter().fold(vec![vec![]], |prefixes, &extent| {
+        prefixes
+            .iter()
+            .flat_map(|prefix| {
+                (0..extent).map(move |coord| {
+                    let mut index = prefix.clone();
+                    index.push(coord);
+                    index
+                })
+            })
+            .collect()
+    })
+}

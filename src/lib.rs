@@ -12,13 +12,13 @@ pub use display::{BoxedTensor, format_boxed};
 pub use domain::{Domain, HRect, JaggedDomain};
 pub use functions::{
     Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow,
-    prod, scale, sparse_coo_tensor, square, squeeze, stack, sum, transpose, unsqueeze, where_,
-    zeros,
+    prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
+    unsqueeze, where_, zeros,
 };
 pub use mapping::{
-    BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
-    InvProjection, Permutation, Powerset, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
-    Where,
+    Affine, BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
+    InvAffine, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Squeeze, Stride,
+    Unsqueeze, Where,
 };
 pub use signature::{HRectSignature, Signature};
 pub use tensor::{
