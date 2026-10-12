@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
+use crate::lattice::Preimage;
 use crate::signature::{HRectSignature, Signature};
 
 /// A set of indices, as returned by a `PowersetMapping`.
@@ -658,19 +659,31 @@ impl HRectMapping for Affine {
 /// The inverse of an `Affine`: sends each index of its codomain back to the
 /// indices of its domain that land on it. There are none off the lattice, so a
 /// sum over this lays its underlying tensor out on the lattice and is zero
-/// elsewhere: a sparse latticed tensor.
+/// elsewhere: a sparse latticed tensor. They are found by solving
+/// `basis·x = index - offset`, so a read costs about as much as the basis is
+/// large, however large the tensors.
 pub struct InvAffine {
     signature: HRectSignature,
-    affine: Affine,
+    offset: Vec<i64>,
+    preimage: Preimage,
 }
 
 impl InvAffine {
     pub fn new(affine: Affine) -> Self {
-        let signature = HRectSignature::new(
-            affine.signature().codomain().clone(),
-            affine.signature().domain().clone(),
-        );
-        Self { signature, affine }
+        let Affine {
+            signature,
+            basis,
+            offset,
+        } = affine;
+        let preimage = Preimage::new(&basis, signature.domain().shape());
+        Self {
+            signature: HRectSignature::new(
+                signature.codomain().clone(),
+                signature.domain().clone(),
+            ),
+            offset,
+            preimage,
+        }
     }
 }
 
@@ -678,31 +691,15 @@ impl HRectPowersetMapping for InvAffine {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Powerset {
-        // A scan of the codomain, which holds for any basis, whether several
-        // indices land on `index` or none do.
-        indices(self.signature.codomain().shape())
-            .into_iter()
-            .filter(|x| HRectMapping::map(&self.affine, x) == index)
-            .collect()
+        let target: Vec<i64> = index
+            .iter()
+            .zip(&self.offset)
+            .map(|(&coord, &start)| coord as i64 - start)
+            .collect();
+        self.preimage.solve(&target).into_iter().collect()
     }
 
     fn signature(&self) -> &HRectSignature {
         &self.signature
     }
-}
-
-/// Every index of a hrect of the given shape, in row-major order.
-fn indices(shape: &[usize]) -> Vec<Vec<usize>> {
-    shape.iter().fold(vec![vec![]], |prefixes, &extent| {
-        prefixes
-            .iter()
-            .flat_map(|prefix| {
-                (0..extent).map(move |coord| {
-                    let mut index = prefix.clone();
-                    index.push(coord);
-                    index
-                })
-            })
-            .collect()
-    })
 }

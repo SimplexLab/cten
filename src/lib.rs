@@ -4,6 +4,7 @@
 pub mod display;
 pub mod domain;
 pub mod functions;
+mod lattice;
 pub mod mapping;
 pub mod signature;
 pub mod tensor;
