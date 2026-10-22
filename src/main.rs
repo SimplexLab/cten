@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bten::{
+use cten::{
     COO, HRect, Physical, Product, RightComposition, Stride, Sum, Sup, Tensor, diagonalize, eye,
     movedim, negate, ones, square, transpose, zeros,
 };

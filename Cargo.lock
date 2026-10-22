@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "bten"
+name = "cten"
 version = "0.1.0"
