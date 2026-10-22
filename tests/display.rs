@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bten::{
+use cten::{
     COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor, format_boxed,
 };
 
