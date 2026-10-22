@@ -1,4 +1,4 @@
-# bten
+# cten
 
 Draft tensor library that considers tensors as functions and operations as
 compositions or functional transforms.
