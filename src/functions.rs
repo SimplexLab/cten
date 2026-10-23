@@ -8,8 +8,8 @@ use std::rc::Rc;
 use crate::display::BoxedTensor;
 use crate::domain::HRect;
 use crate::mapping::{
-    COO, Concat, Diagonal, EmptyMapping, InvProjection, Permutation, Projection, Squeeze,
-    Unsqueeze, Where,
+    Affine, COO, Concat, Diagonal, EmptyMapping, InvAffine, InvProjection, Permutation, Projection,
+    Squeeze, Unsqueeze, Where,
 };
 use crate::tensor::{
     JaggedTensor, LeftComposition, Physical, Product, Reduction, ReductionTensor, RightComposition,
@@ -267,6 +267,20 @@ pub fn sparse_coo_tensor(
         );
     }
     Sum::new(values, Rc::new(COO::new(HRect::new(size), coordinates)))
+}
+
+/// A sparse latticed tensor of shape `shape`: the value at index `x` of
+/// `physical` sits at `basis·x + offset`, and the tensor is zero off that
+/// lattice. `basis` has a row per dimension of `shape` and a column per
+/// dimension of `physical`. Values the lattice sends to one index add up.
+pub fn sparse_latticed_tensor<T: BoxedTensor + 'static>(
+    physical: Rc<T>,
+    basis: Vec<Vec<i64>>,
+    offset: Vec<i64>,
+    shape: Vec<usize>,
+) -> Sum<InvAffine> {
+    let affine = Affine::new(physical.hrect().clone(), basis, offset, HRect::new(shape));
+    Sum::new(physical, Rc::new(InvAffine::new(affine)))
 }
 
 pub fn sum<T: BoxedTensor + 'static>(input: Rc<T>, dim: usize) -> Sum<InvProjection> {

@@ -3,7 +3,8 @@ use std::rc::Rc;
 use cten::{
     BoxedTensor, COO, Domain, HRect, Physical, RightComposition, Stride, Sum, Tensor, clamp,
     concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow, prod, scale,
-    sparse_coo_tensor, square, squeeze, stack, sum, transpose, unsqueeze, where_, zeros,
+    sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose, unsqueeze,
+    where_, zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -661,6 +662,136 @@ fn sparse_coo_tensor_rejects_the_wrong_number_of_rows() {
 #[should_panic(expected = "a coordinate for each")]
 fn sparse_coo_tensor_rejects_a_row_of_the_wrong_length() {
     sparse_coo_tensor(vec![vec![0, 1]], Rc::new(Physical::new(vec![1.0])), vec![3]);
+}
+
+// The examples of sparse latticed tensors from albanD/subclass_zoo#54.
+
+#[test]
+fn sparse_latticed_tensor_lays_out_a_diagonal() {
+    let diagonal = sparse_latticed_tensor(
+        Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
+        vec![vec![1], vec![1]],
+        vec![0, 0],
+        vec![3, 3],
+    );
+
+    assert_eq!(diagonal.hrect().shape(), &[3, 3]);
+    assert_eq!(
+        collect_2d(&diagonal, 3, 3),
+        vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 2.0, 0.0],
+            vec![0.0, 0.0, 3.0]
+        ]
+    );
+}
+
+#[test]
+fn sparse_latticed_tensor_lays_out_an_anti_diagonal() {
+    let anti_diagonal = sparse_latticed_tensor(
+        Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
+        vec![vec![1], vec![-1]],
+        vec![0, 2],
+        vec![3, 3],
+    );
+
+    assert_eq!(
+        collect_2d(&anti_diagonal, 3, 3),
+        vec![
+            vec![0.0, 0.0, 1.0],
+            vec![0.0, 2.0, 0.0],
+            vec![3.0, 0.0, 0.0]
+        ]
+    );
+}
+
+#[test]
+fn sparse_latticed_tensor_lays_out_a_block_diagonal() {
+    // Three 2 by 2 blocks holding 1 to 12, block after block, row by row.
+    let values: Vec<f32> = (1..=12).map(|value| value as f32).collect();
+    let blocks = Rc::new(RightComposition::new(
+        Rc::new(Physical::new(values)),
+        Rc::new(Stride::new(HRect::new(vec![3, 2, 2]), vec![4, 2, 1])),
+    ));
+    let block_diagonal = sparse_latticed_tensor(
+        blocks,
+        vec![vec![2, 1, 0], vec![2, 0, 1]],
+        vec![0, 0],
+        vec![6, 6],
+    );
+
+    assert_eq!(
+        collect_2d(&block_diagonal, 6, 6),
+        vec![
+            vec![1.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+            vec![3.0, 4.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 5.0, 6.0, 0.0, 0.0],
+            vec![0.0, 0.0, 7.0, 8.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 9.0, 10.0],
+            vec![0.0, 0.0, 0.0, 0.0, 11.0, 12.0],
+        ]
+    );
+}
+
+#[test]
+fn sparse_latticed_tensor_pads_with_its_offset_and_shape() {
+    let padded = sparse_latticed_tensor(
+        matrix(2, 2, vec![1.0, 2.0, 3.0, 4.0]),
+        vec![vec![1, 0], vec![0, 1]],
+        vec![1, 0],
+        vec![3, 4],
+    );
+
+    assert_eq!(
+        collect_2d(&padded, 3, 4),
+        vec![
+            vec![0.0, 0.0, 0.0, 0.0],
+            vec![1.0, 2.0, 0.0, 0.0],
+            vec![3.0, 4.0, 0.0, 0.0]
+        ]
+    );
+}
+
+// The physical tensor is a kernel repeated along a new first axis by a zero
+// stride, as torch's `expand` does, so it still holds only three values.
+#[test]
+fn sparse_latticed_tensor_lays_out_a_circulant_matrix() {
+    let kernel = Rc::new(RightComposition::new(
+        Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
+        Rc::new(Stride::new(HRect::new(vec![4, 3]), vec![0, 1])),
+    ));
+    let circulant =
+        sparse_latticed_tensor(kernel, vec![vec![1, 0], vec![1, 1]], vec![0, 0], vec![4, 6]);
+
+    assert_eq!(
+        collect_2d(&circulant, 4, 6),
+        vec![
+            vec![1.0, 2.0, 3.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 2.0, 3.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 0.0],
+            vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+        ]
+    );
+}
+
+// torch's `x.repeat(4, 2)` without copying `x`: the physical tensor repeats it
+// by zero strides, and the basis puts the two copies side by side on each row.
+#[test]
+fn sparse_latticed_tensor_repeats_a_vector_without_copying_it() {
+    let expanded = Rc::new(RightComposition::new(
+        Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
+        Rc::new(Stride::new(HRect::new(vec![4, 2, 3]), vec![0, 0, 1])),
+    ));
+    let repeated = sparse_latticed_tensor(
+        expanded,
+        vec![vec![1, 0, 0], vec![0, 3, 1]],
+        vec![0, 0],
+        vec![4, 6],
+    );
+
+    for row in collect_2d(&repeated, 4, 6) {
+        assert_eq!(row, vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]);
+    }
 }
 
 #[test]

@@ -1,9 +1,9 @@
-use std::{assert_eq, rc::Rc};
+use std::{assert_eq, collections::HashMap, rc::Rc};
 
 use cten::{
-    COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvProjection, JaggedDomain,
-    Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
-    Where,
+    Affine, COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvAffine, InvProjection,
+    JaggedDomain, Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride,
+    Unsqueeze, Where,
 };
 
 #[test]
@@ -69,6 +69,237 @@ fn an_inv_projection_sends_each_index_to_the_line_along_its_dim() {
         inv_proj.map(&[1, 3]),
         Powerset::from([vec![1, 0, 3], vec![1, 1, 3], vec![1, 2, 3]])
     );
+}
+
+// The anti-diagonal of a 3 by 3 matrix: a negative step, made up for by the
+// offset.
+#[test]
+fn an_affine_sends_each_index_to_its_lattice_point() {
+    let affine = Affine::new(
+        HRect::new(vec![3]),
+        vec![vec![1], vec![-1]],
+        vec![0, 2],
+        HRect::new(vec![3, 3]),
+    );
+
+    assert!(affine.domain().contains(&[2]));
+    assert!(!affine.domain().contains(&[3]));
+    assert!(affine.codomain().contains(&[2, 2]));
+    assert_eq!(affine.map(&[0]), vec![0, 2]);
+    assert_eq!(affine.map(&[1]), vec![1, 1]);
+    assert_eq!(affine.map(&[2]), vec![2, 0]);
+}
+
+// Without the offset, the same steps would reach -2 along the second dimension.
+#[test]
+#[should_panic(expected = "the lattice reaches -2 to 0 along dimension 1")]
+fn an_affine_rejects_a_lattice_leaving_its_codomain() {
+    Affine::new(
+        HRect::new(vec![3]),
+        vec![vec![1], vec![-1]],
+        vec![0, 0],
+        HRect::new(vec![3, 3]),
+    );
+}
+
+#[test]
+#[should_panic(expected = "a basis column per dimension of the domain")]
+fn an_affine_rejects_a_basis_of_the_wrong_shape() {
+    Affine::new(
+        HRect::new(vec![3]),
+        vec![vec![1, 0]],
+        vec![0],
+        HRect::new(vec![3]),
+    );
+}
+
+// The flattened diagonal of a 3 by 3 matrix: every fourth position is on the
+// lattice.
+#[test]
+fn an_inv_affine_sends_each_index_to_the_lattice_points_on_it() {
+    let inv_affine = InvAffine::new(Affine::new(
+        HRect::new(vec![3]),
+        vec![vec![4]],
+        vec![0],
+        HRect::new(vec![9]),
+    ));
+
+    assert!(inv_affine.domain().contains(&[8]));
+    assert!(!inv_affine.domain().contains(&[9]));
+    assert!(inv_affine.codomain().contains(&[2]));
+    assert_eq!(inv_affine.map(&[4]), Powerset::from([vec![1]]));
+    assert_eq!(inv_affine.map(&[5]), Powerset::new());
+}
+
+// Dropping the middle axis is affine too, and sends several indices onto each
+// one, which the inverse finds all of.
+#[test]
+fn an_inv_affine_of_a_projection_matches_the_inv_projection() {
+    let inv_affine = InvAffine::new(Affine::new(
+        HRect::new(vec![2, 3, 4]),
+        vec![vec![1, 0, 0], vec![0, 0, 1]],
+        vec![0, 0],
+        HRect::new(vec![2, 4]),
+    ));
+    let inv_proj = InvProjection::new(HRect::new(vec![2, 3, 4]), 1);
+
+    for m in 0..2 {
+        for p in 0..4 {
+            assert_eq!(inv_affine.map(&[m, p]), inv_proj.map(&[m, p]));
+        }
+    }
+}
+
+/// Every index of a hrect of the given shape.
+fn indices(shape: &[usize]) -> Vec<Vec<usize>> {
+    shape.iter().fold(vec![vec![]], |prefixes, &extent| {
+        prefixes
+            .iter()
+            .flat_map(|prefix| {
+                (0..extent).map(move |coord| {
+                    let mut index = prefix.clone();
+                    index.push(coord);
+                    index
+                })
+            })
+            .collect()
+    })
+}
+
+/// Checks `InvAffine::map` at every index of `shape` against a scan of every
+/// index of `physical`.
+fn assert_inv_affine_matches_a_scan(
+    basis: Vec<Vec<i64>>,
+    offset: Vec<i64>,
+    physical: Vec<usize>,
+    shape: Vec<usize>,
+) {
+    let mut expected: HashMap<Vec<usize>, Powerset> = HashMap::new();
+    for x in indices(&physical) {
+        let y = basis
+            .iter()
+            .zip(&offset)
+            .map(|(row, &start)| {
+                let coord: i64 = row
+                    .iter()
+                    .zip(&x)
+                    .map(|(&step, &coord)| step * coord as i64)
+                    .sum();
+                (start + coord) as usize
+            })
+            .collect();
+        expected.entry(y).or_default().insert(x);
+    }
+    let inv_affine = InvAffine::new(Affine::new(
+        HRect::new(physical),
+        basis,
+        offset,
+        HRect::new(shape.clone()),
+    ));
+    for y in indices(&shape) {
+        let lands = expected.remove(&y).unwrap_or_default();
+        assert_eq!(inv_affine.map(&y), lands, "at {y:?}");
+    }
+}
+
+// The lattices of all the sparse latticed tensor examples, one that ends before
+// its shape does, and two where several indices land on one.
+#[test]
+fn an_inv_affine_finds_the_indices_a_scan_finds() {
+    let lattices = [
+        (vec![vec![3]], vec![0], vec![5], vec![18]),
+        (vec![vec![2], vec![3]], vec![0, 0], vec![3], vec![5, 7]),
+        (vec![vec![1], vec![1]], vec![0, 0], vec![3], vec![3, 3]),
+        (vec![vec![1], vec![-1]], vec![0, 2], vec![3], vec![3, 3]),
+        (
+            vec![vec![2, 1, 0], vec![2, 0, 1]],
+            vec![0, 0],
+            vec![3, 2, 2],
+            vec![6, 6],
+        ),
+        (vec![vec![4]], vec![0], vec![3], vec![9]),
+        (
+            vec![vec![1], vec![1], vec![1]],
+            vec![0, 0, 0],
+            vec![3],
+            vec![3, 3, 3],
+        ),
+        (
+            vec![vec![1, 0], vec![1, 1]],
+            vec![0, 0],
+            vec![4, 3],
+            vec![4, 6],
+        ),
+        (
+            vec![vec![1, 0], vec![0, 1]],
+            vec![1, 0],
+            vec![2, 2],
+            vec![3, 4],
+        ),
+        (
+            vec![vec![0, 1, 0, 4], vec![1, 0, 4, 0]],
+            vec![0, 0],
+            vec![2, 2, 2, 2],
+            vec![6, 6],
+        ),
+        (
+            vec![vec![0, 2, 1], vec![2, 0, 1]],
+            vec![0, 0],
+            vec![4, 4, 2],
+            vec![8, 8],
+        ),
+        (
+            vec![vec![1, 0, 0], vec![0, 3, 1]],
+            vec![0, 0],
+            vec![4, 2, 3],
+            vec![4, 6],
+        ),
+        (vec![vec![1, 1]], vec![0], vec![3, 3], vec![5]),
+        (
+            vec![vec![1, 0, 0], vec![0, 0, 1]],
+            vec![0, 0],
+            vec![2, 3, 4],
+            vec![2, 4],
+        ),
+    ];
+    for (basis, offset, physical, shape) in lattices {
+        assert_inv_affine_matches_a_scan(basis, offset, physical, shape);
+    }
+}
+
+// Lattices from a fixed seed: entries from -3 to 3, up to three dimensions to
+// land in and four to land from, with the offset and shape chosen to fit.
+#[test]
+fn an_inv_affine_finds_the_indices_a_scan_finds_on_random_lattices() {
+    let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = |bound: u64| {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (seed >> 33) % bound
+    };
+    for _ in 0..1000 {
+        let rows = 1 + next(3) as usize;
+        let cols = 1 + next(4) as usize;
+        let physical: Vec<usize> = (0..cols).map(|_| 1 + next(3) as usize).collect();
+        let basis: Vec<Vec<i64>> = (0..rows)
+            .map(|_| (0..cols).map(|_| next(7) as i64 - 3).collect())
+            .collect();
+        let mut offset = Vec::new();
+        let mut shape = Vec::new();
+        for row in &basis {
+            let (low, high) =
+                row.iter()
+                    .zip(&physical)
+                    .fold((0, 0), |(low, high), (&step, &extent)| {
+                        let end = step * (extent as i64 - 1);
+                        (low + end.min(0), high + end.max(0))
+                    });
+            offset.push(-low);
+            shape.push((high - low + 1) as usize + next(2) as usize);
+        }
+        assert_inv_affine_matches_a_scan(basis, offset, physical, shape);
+    }
 }
 
 #[test]

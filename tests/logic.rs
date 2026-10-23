@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping, Product,
-    RightComposition, Stride, Sum, Sup, Tensor,
+    Affine, COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping,
+    Product, RightComposition, Stride, Sum, Sup, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -286,4 +286,27 @@ fn a_powerset_mapping_can_be_used_directly() {
     assert_eq!(selected.len(), 1);
     assert!(selected.contains([4].as_slice()));
     assert!(diagonal.map(&[4, 5]).is_empty());
+}
+
+// Read through an affine map, a tensor gives its values on a lattice: here the
+// diagonal of a matrix, as torch's `diagonal` does.
+#[test]
+fn an_affine_mapping_reads_a_lattice_out_of_a_tensor() {
+    let values: Vec<f32> = (1..=9).map(|value| value as f32).collect();
+    let matrix = Rc::new(RightComposition::new(
+        Rc::new(Physical::new(values)),
+        Rc::new(Stride::new(HRect::new(vec![3, 3]), vec![3, 1])),
+    ));
+    let diagonal = RightComposition::new(
+        matrix,
+        Rc::new(Affine::new(
+            HRect::new(vec![3]),
+            vec![vec![1], vec![1]],
+            vec![0, 0],
+            HRect::new(vec![3, 3]),
+        )),
+    );
+
+    let read: Vec<f32> = (0..3).map(|i| diagonal.get(&[i])).collect();
+    assert_eq!(read, vec![1.0, 5.0, 9.0]);
 }
