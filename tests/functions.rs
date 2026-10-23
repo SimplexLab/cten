@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bten::{
+use cten::{
     BoxedTensor, COO, Domain, HRect, Physical, RightComposition, Stride, Sum, Tensor, clamp,
     concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow, prod, scale,
     sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose, unsqueeze,

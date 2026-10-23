@@ -173,7 +173,7 @@ pub fn stack(tensors: Vec<Rc<dyn BoxedTensor>>, dim: usize) -> RightComposition<
 }
 
 /// Reads `input` where `condition` is not zero and `other` where it is. torch's
-/// `where` takes a boolean condition; bten's tensors hold floats, so zero stands
+/// `where` takes a boolean condition; cten's tensors hold floats, so zero stands
 /// for false. `where` is a Rust keyword, hence the underscore.
 pub fn where_(
     condition: Rc<dyn BoxedTensor>,

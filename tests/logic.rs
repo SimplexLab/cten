@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bten::{
+use cten::{
     Affine, COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping,
     Product, RightComposition, Stride, Sum, Sup, Tensor,
 };

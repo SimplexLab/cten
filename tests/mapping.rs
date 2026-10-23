@@ -1,6 +1,6 @@
 use std::{assert_eq, collections::HashMap, rc::Rc};
 
-use bten::{
+use cten::{
     Affine, COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvAffine, InvProjection,
     JaggedDomain, Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride,
     Unsqueeze, Where,
