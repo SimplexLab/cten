@@ -14,6 +14,15 @@ fn a_physical_vector_prints_flat() {
 }
 
 #[test]
+fn tensors_of_other_value_types_print_the_same_way() {
+    let ints = Physical::new(vec![1i64, -20, 3]);
+    let flags = Physical::new(vec![true, false]);
+
+    assert_eq!(ints.to_string(), "tensor([  1, -20,   3])");
+    assert_eq!(flags.to_string(), "tensor([ true, false])");
+}
+
+#[test]
 fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
     let strided = RightComposition::new(
         physical(),

@@ -3,7 +3,7 @@
 //! render the same way, by walking a shape.
 
 use std::fmt;
-use std::fmt::Write as _;
+use std::fmt::{Display, Write as _};
 
 use crate::domain::HRect;
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping};
@@ -13,41 +13,43 @@ use crate::tensor::{
 
 /// A tensor whose domain is a hrect. Only these can be printed, since formatting
 /// walks a shape and visits every index of it.
-pub trait BoxedTensor: Tensor {
+pub trait BoxedTensor<T = f32>: Tensor<T> {
     fn hrect(&self) -> &HRect;
 }
 
 /// Renders a boxed tensor. Every `Display` implementation below defers to this,
 /// and each is written for the boxed instantiation of its tensor only.
-pub fn format_boxed(tensor: &dyn BoxedTensor) -> String {
+pub fn format_boxed<T: Display>(tensor: &dyn BoxedTensor<T>) -> String {
     format_tensor(tensor.hrect().shape(), &|index| tensor.get(index))
 }
 
-impl fmt::Display for Physical {
+impl<T: Clone + Display> Display for Physical<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
     }
 }
 
-impl<M: BoxedMapping + ?Sized> fmt::Display for RightComposition<M> {
+impl<M: BoxedMapping + ?Sized, T: Display> Display for RightComposition<M, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
     }
 }
 
-impl<T: BoxedTensor + ?Sized> fmt::Display for LeftComposition<T> {
+impl<U: BoxedTensor<A> + ?Sized, A, B: Display> Display for LeftComposition<U, A, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
     }
 }
 
-impl<R: Reduction, M: BoxedPowersetMapping + ?Sized> fmt::Display for ReductionTensor<R, M> {
+impl<R: Reduction<T>, M: BoxedPowersetMapping + ?Sized, T: Display> Display
+    for ReductionTensor<R, M, T>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
     }
 }
 
-fn format_tensor(shape: &[usize], accessor: &dyn Fn(&[usize]) -> f32) -> String {
+fn format_tensor<T: Display>(shape: &[usize], accessor: &dyn Fn(&[usize]) -> T) -> String {
     if shape.is_empty() {
         return format!("tensor({})", accessor(&[]));
     }
@@ -70,11 +72,11 @@ fn format_tensor(shape: &[usize], accessor: &dyn Fn(&[usize]) -> f32) -> String 
     out
 }
 
-fn max_width(
+fn max_width<T: Display>(
     shape: &[usize],
     index: &mut [usize],
     dim: usize,
-    accessor: &dyn Fn(&[usize]) -> f32,
+    accessor: &dyn Fn(&[usize]) -> T,
 ) -> usize {
     let mut width = 0;
     for i in 0..shape[dim] {
@@ -88,14 +90,14 @@ fn max_width(
     width
 }
 
-fn format_nested(
+fn format_nested<T: Display>(
     out: &mut String,
     shape: &[usize],
     index: &mut [usize],
     dim: usize,
     indent: &str,
     width: usize,
-    accessor: &dyn Fn(&[usize]) -> f32,
+    accessor: &dyn Fn(&[usize]) -> T,
 ) {
     let innermost = dim == shape.len() - 1;
     out.push('[');
