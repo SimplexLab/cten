@@ -3,8 +3,8 @@ use std::rc::Rc;
 use cten::{
     BoxedTensor, COO, Domain, HRect, LeftComposition, Physical, RightComposition, Stride, Sum,
     Tensor, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute,
-    pow, prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum,
-    transpose, unsqueeze, where_, zeros,
+    prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
+    unsqueeze, where_, zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -80,13 +80,11 @@ fn elementwise_functions_compose() {
 #[test]
 fn parameterised_transforms_remember_their_argument() {
     let doubled = scale(physical(), 2.0);
-    let cubed = pow(physical(), 3.0);
     let bounded = clamp(physical(), 2.0, 4.0);
 
     for i in 0..6 {
         let value = (i + 1) as f32;
         assert_eq!(doubled.get(&[i]), value * 2.0);
-        assert_eq!(cubed.get(&[i]), value * value * value);
     }
 
     // [1, 2, 3, 4, 5, 6] held between 2 and 4.
@@ -121,11 +119,21 @@ fn clamp_rejects_a_reversed_range() {
     clamp(physical(), 4.0, 2.0);
 }
 
-// Rejecting these up front is what keeps `f32::clamp` from panicking on a read.
+// Nothing is below or above a NaN bound, so it is rejected up front too.
 #[test]
 #[should_panic(expected = "clamp needs low <= high")]
 fn clamp_rejects_a_nan_bound() {
     clamp(physical(), f32::NAN, 4.0);
+}
+
+#[test]
+fn elementwise_functions_work_on_integer_tensors() {
+    let ints = Rc::new(Physical::new(vec![-3i64, 1, 5]));
+
+    assert_eq!(collect_1d(&square(ints.clone()), 3), vec![9, 1, 25]);
+    assert_eq!(collect_1d(&negate(ints.clone()), 3), vec![3, -1, -5]);
+    assert_eq!(collect_1d(&scale(ints.clone(), 2), 3), vec![-6, 2, 10]);
+    assert_eq!(collect_1d(&clamp(ints, 0, 4), 3), vec![0, 1, 4]);
 }
 
 #[test]

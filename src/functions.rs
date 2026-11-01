@@ -3,6 +3,8 @@
 //! machinery of its own.
 
 use std::assert_eq;
+use std::fmt::Display;
+use std::ops::{Mul, Neg};
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
@@ -16,28 +18,43 @@ use crate::tensor::{
     RightComposition, Sum, SumReduction, Tensor,
 };
 
-pub fn square<T: Tensor + ?Sized>(u: Rc<T>) -> LeftComposition<T> {
+pub fn square<V: Mul<Output = V> + Copy + 'static, U: Tensor<V> + ?Sized>(
+    u: Rc<U>,
+) -> LeftComposition<U, V> {
     LeftComposition::new(u, |x| x * x)
 }
 
-pub fn negate<T: Tensor + ?Sized>(u: Rc<T>) -> LeftComposition<T> {
+pub fn negate<V: Neg<Output = V> + 'static, U: Tensor<V> + ?Sized>(
+    u: Rc<U>,
+) -> LeftComposition<U, V> {
     LeftComposition::new(u, |x| -x)
 }
 
-pub fn scale<T: Tensor + ?Sized>(u: Rc<T>, factor: f32) -> LeftComposition<T> {
+pub fn scale<V: Mul<Output = V> + Copy + 'static, U: Tensor<V> + ?Sized>(
+    u: Rc<U>,
+    factor: V,
+) -> LeftComposition<U, V> {
     LeftComposition::new(u, move |x| x * factor)
 }
 
-pub fn pow<T: Tensor + ?Sized>(u: Rc<T>, exponent: f32) -> LeftComposition<T> {
-    LeftComposition::new(u, move |x| x.powf(exponent))
-}
-
-/// Checking the bounds here rather than leaving it to `f32::clamp` reports the
-/// mistake where it is made, not at the first read, and rules out the NaN
-/// bounds that would panic there too.
-pub fn clamp<T: Tensor + ?Sized>(u: Rc<T>, low: f32, high: f32) -> LeftComposition<T> {
+/// Holds values between `low` and `high`. Checking the bounds here reports the
+/// mistake where it is made, not at the first read, and rules out NaN bounds,
+/// which nothing would be below or above.
+pub fn clamp<V: PartialOrd + Copy + Display + 'static, U: Tensor<V> + ?Sized>(
+    u: Rc<U>,
+    low: V,
+    high: V,
+) -> LeftComposition<U, V> {
     assert!(low <= high, "clamp needs low <= high, got {low} and {high}");
-    LeftComposition::new(u, move |x| x.clamp(low, high))
+    LeftComposition::new(u, move |x| {
+        if x < low {
+            low
+        } else if x > high {
+            high
+        } else {
+            x
+        }
+    })
 }
 
 /// Reorders the axes of a tensor: `axes[i]` is the axis of `u` that becomes
