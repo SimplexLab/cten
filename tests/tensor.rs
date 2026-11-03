@@ -69,6 +69,27 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
 }
 
 #[test]
+fn a_physical_tensor_holds_values_of_any_type() {
+    let ints = Physical::new(vec![3i64, -1]);
+    let flags = Physical::new(vec![true, false]);
+
+    assert_eq!(ints.get(&[1]), -1);
+    assert!(flags.get(&[0]));
+    assert!(!flags.get(&[1]));
+}
+
+// A transform may change the value type, as a comparison turns numbers into
+// booleans.
+#[test]
+fn a_left_composition_can_change_the_value_type() {
+    let above_three = LeftComposition::new(physical(), |x: f32| x > 3.0);
+
+    assert_eq!(above_three.hrect().shape(), &[6]);
+    assert!(!above_three.get(&[2]));
+    assert!(above_three.get(&[3]));
+}
+
+#[test]
 fn a_jagged_tensor_reads_each_part_under_its_first_coordinate() {
     let jagged = JaggedTensor::new(vec![physical(), Rc::new(Physical::new(vec![10.0, 20.0]))]);
 

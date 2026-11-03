@@ -12,8 +12,8 @@ pub mod tensor;
 pub use display::{BoxedTensor, format_boxed};
 pub use domain::{Domain, HRect, JaggedDomain};
 pub use functions::{
-    Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow,
-    prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
+    Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, prod,
+    scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
     unsqueeze, where_, zeros,
 };
 pub use mapping::{

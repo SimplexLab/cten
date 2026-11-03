@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use cten::{
-    BoxedTensor, COO, Domain, HRect, Physical, RightComposition, Stride, Sum, Tensor, clamp,
-    concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, pow, prod, scale,
-    sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose, unsqueeze,
-    where_, zeros,
+    BoxedTensor, COO, Domain, HRect, LeftComposition, Physical, RightComposition, Stride, Sum,
+    Tensor, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute,
+    prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
+    unsqueeze, where_, zeros,
 };
 
 fn physical() -> Rc<Physical> {
@@ -36,11 +36,19 @@ fn matrix(rows: usize, cols: usize, values: Vec<f32>) -> Rc<RightComposition<Str
     ))
 }
 
-fn collect_1d(tensor: &dyn Tensor, len: usize) -> Vec<f32> {
+/// A row-major matrix over stored integers.
+fn int_matrix(rows: usize, cols: usize, values: Vec<i64>) -> Rc<RightComposition<Stride, i64>> {
+    Rc::new(RightComposition::new(
+        Rc::new(Physical::new(values)),
+        Rc::new(Stride::new(HRect::new(vec![rows, cols]), vec![cols, 1])),
+    ))
+}
+
+fn collect_1d<A>(tensor: &dyn Tensor<A>, len: usize) -> Vec<A> {
     (0..len).map(|i| tensor.get(&[i])).collect()
 }
 
-fn collect_2d(tensor: &dyn Tensor, rows: usize, cols: usize) -> Vec<Vec<f32>> {
+fn collect_2d<A>(tensor: &dyn Tensor<A>, rows: usize, cols: usize) -> Vec<Vec<A>> {
     (0..rows)
         .map(|i| (0..cols).map(|j| tensor.get(&[i, j])).collect())
         .collect()
@@ -72,13 +80,11 @@ fn elementwise_functions_compose() {
 #[test]
 fn parameterised_transforms_remember_their_argument() {
     let doubled = scale(physical(), 2.0);
-    let cubed = pow(physical(), 3.0);
     let bounded = clamp(physical(), 2.0, 4.0);
 
     for i in 0..6 {
         let value = (i + 1) as f32;
         assert_eq!(doubled.get(&[i]), value * 2.0);
-        assert_eq!(cubed.get(&[i]), value * value * value);
     }
 
     // [1, 2, 3, 4, 5, 6] held between 2 and 4.
@@ -113,11 +119,21 @@ fn clamp_rejects_a_reversed_range() {
     clamp(physical(), 4.0, 2.0);
 }
 
-// Rejecting these up front is what keeps `f32::clamp` from panicking on a read.
+// Nothing is below or above a NaN bound, so it is rejected up front too.
 #[test]
 #[should_panic(expected = "clamp needs low <= high")]
 fn clamp_rejects_a_nan_bound() {
     clamp(physical(), f32::NAN, 4.0);
+}
+
+#[test]
+fn elementwise_functions_work_on_integer_tensors() {
+    let ints = Rc::new(Physical::new(vec![-3i64, 1, 5]));
+
+    assert_eq!(collect_1d(&square(ints.clone()), 3), vec![9, 1, 25]);
+    assert_eq!(collect_1d(&negate(ints.clone()), 3), vec![3, -1, -5]);
+    assert_eq!(collect_1d(&scale(ints.clone(), 2), 3), vec![-6, 2, 10]);
+    assert_eq!(collect_1d(&clamp(ints, 0, 4), 3), vec![0, 1, 4]);
 }
 
 #[test]
@@ -516,7 +532,7 @@ fn concatenate_rejects_tensors_whose_other_extents_differ() {
 #[test]
 #[should_panic(expected = "at least one tensor")]
 fn concatenate_rejects_an_empty_list() {
-    concatenate(vec![], 0);
+    concatenate::<f32>(vec![], 0);
 }
 
 #[test]
@@ -549,7 +565,7 @@ fn stack_rejects_tensors_of_different_shapes() {
 
 #[test]
 fn where_reads_input_where_the_condition_holds_and_other_elsewhere() {
-    let condition = Rc::new(Physical::new(vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0]));
+    let condition = Rc::new(Physical::new(vec![true, false, false, true, false, true]));
     let picked = where_(condition, physical(), Rc::new(negate(physical())));
 
     assert_eq!(
@@ -558,22 +574,22 @@ fn where_reads_input_where_the_condition_holds_and_other_elsewhere() {
     );
 }
 
-// Zero reads as false, and so does negative zero, which equals it; anything
-// else reads as true, NaN included, as it would in C or Python.
+// A comparison turns a float tensor into a boolean one, to use as a condition.
 #[test]
-fn where_counts_any_condition_other_than_zero_as_true() {
-    let condition = Rc::new(Physical::new(vec![-1.0, f32::NAN, 0.5, 0.0, -0.0, 0.0]));
-    let picked = where_(condition, physical(), Rc::new(zeros(vec![6])));
+fn where_can_take_its_condition_from_a_comparison() {
+    let above_three = Rc::new(LeftComposition::new(physical(), |x: f32| x > 3.0));
+    let picked = where_(above_three, physical(), Rc::new(zeros(vec![6])));
 
-    assert_eq!(collect_1d(&picked, 6), vec![1.0, 2.0, 3.0, 0.0, 0.0, 0.0]);
+    assert_eq!(collect_1d(&picked, 6), vec![0.0, 0.0, 0.0, 4.0, 5.0, 6.0]);
 }
 
-// The condition is a tensor like any other: here the identity keeps the
-// diagonal of one matrix and takes everything else from another.
+// The condition is a tensor like any other: here the non-zeros of the identity
+// keep the diagonal of one matrix and take everything else from another.
 #[test]
 fn where_can_take_its_condition_from_a_tensor_with_no_data() {
     let m = matrix(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
-    let picked = where_(Rc::new(eye(2)), m.clone(), Rc::new(negate(m)));
+    let diagonal = Rc::new(LeftComposition::new(Rc::new(eye(2)), |x: f32| x != 0.0));
+    let picked = where_(diagonal, m.clone(), Rc::new(negate(m)));
 
     assert_eq!(
         collect_2d(&picked, 2, 2),
@@ -584,7 +600,11 @@ fn where_can_take_its_condition_from_a_tensor_with_no_data() {
 #[test]
 #[should_panic(expected = "one shape")]
 fn where_rejects_a_condition_of_another_shape() {
-    where_(Rc::new(ones(vec![2])), physical(), physical());
+    where_(
+        Rc::new(Physical::new(vec![true, false])),
+        physical(),
+        physical(),
+    );
 }
 
 // The example from torch's documentation for `sparse_coo_tensor`.
@@ -820,5 +840,58 @@ fn mm_multiplies_matrices() {
     assert_eq!(
         collect_2d(&product, 2, 2),
         vec![vec![58.0, 64.0], vec![139.0, 154.0]]
+    );
+}
+
+// Functions that only move indices work whatever the values are.
+#[test]
+fn index_functions_work_on_integer_tensors() {
+    let m = int_matrix(2, 3, vec![1, 2, 3, 4, 5, 6]);
+    let joined = concatenate(vec![m.clone(), m.clone()], 0);
+    let stacked = stack(vec![m.clone(), m.clone()], 0);
+
+    assert_eq!(
+        collect_2d(&transpose(m), 3, 2),
+        vec![vec![1, 4], vec![2, 5], vec![3, 6]]
+    );
+    assert_eq!(joined.hrect().shape(), &[4, 3]);
+    assert_eq!(joined.get(&[3, 2]), 6);
+    assert_eq!(stacked.hrect().shape(), &[2, 2, 3]);
+    assert_eq!(stacked.get(&[1, 1, 0]), 4);
+}
+
+#[test]
+fn where_picks_between_integer_tensors() {
+    let condition = Rc::new(Physical::new(vec![true, false, true]));
+    let picked = where_(
+        condition,
+        Rc::new(Physical::new(vec![1i64, 2, 3])),
+        Rc::new(Physical::new(vec![-1i64, -2, -3])),
+    );
+
+    assert_eq!(collect_1d(&picked, 3), vec![1, -2, 3]);
+}
+
+#[test]
+fn sum_and_prod_reduce_integer_and_double_tensors() {
+    let ints = int_matrix(2, 3, vec![1, 2, 3, 4, 5, 6]);
+    let doubles = Rc::new(Physical::new(vec![0.5f64, 0.25, 2.0]));
+
+    assert_eq!(collect_1d(&sum(ints.clone(), 0), 3), vec![5, 7, 9]);
+    assert_eq!(collect_1d(&prod(ints, 1), 2), vec![6, 120]);
+    assert_eq!(sum(doubles.clone(), 0).get(&[]), 2.75);
+    assert_eq!(prod(doubles, 0).get(&[]), 0.25);
+}
+
+#[test]
+fn mm_multiplies_integer_matrices() {
+    let product = mm(
+        int_matrix(2, 3, vec![1, 2, 3, 4, 5, 6]),
+        int_matrix(3, 2, vec![7, 8, 9, 10, 11, 12]),
+    );
+
+    assert_eq!(
+        collect_2d(&product, 2, 2),
+        vec![vec![58, 64], vec![139, 154]]
     );
 }

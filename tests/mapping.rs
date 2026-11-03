@@ -386,7 +386,7 @@ fn a_concat_rejects_parts_whose_other_extents_differ() {
 fn a_where_sends_each_index_to_the_part_its_condition_picks() {
     let picks = Where::new(
         JaggedDomain::new(vec![HRect::new(vec![3]), HRect::new(vec![3])]),
-        Rc::new(Physical::new(vec![1.0, 0.0, 2.0])),
+        Rc::new(Physical::new(vec![true, false, true])),
     );
 
     assert!(picks.domain().contains(&[2]));

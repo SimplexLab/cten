@@ -348,18 +348,18 @@ impl HRectMapping for Concat {
     }
 }
 
-/// Reads the first of two tensors where `condition` is not zero and the second
-/// where it is. Unlike the mappings above, where an index is sent depends on a
+/// Reads the first of two tensors where `condition` holds and the second where
+/// it does not. Unlike the mappings above, where an index is sent depends on a
 /// tensor's values and not only on the index itself.
 pub struct Where {
     signature: Signature<HRect, JaggedDomain>,
-    condition: Rc<dyn BoxedTensor>,
+    condition: Rc<dyn BoxedTensor<bool>>,
 }
 
 impl Where {
     /// Takes the codomain, the two tensors picked from. The domain is their
     /// common shape, which `condition` must share.
-    pub fn new(codomain: JaggedDomain, condition: Rc<dyn BoxedTensor>) -> Self {
+    pub fn new(codomain: JaggedDomain, condition: Rc<dyn BoxedTensor<bool>>) -> Self {
         let parts = codomain.parts();
         assert_eq!(parts.len(), 2, "where picks from exactly two tensors");
         let shape = parts[0].clone();
@@ -381,12 +381,7 @@ impl HRectMapping for Where {
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
-        // Zero reads as false and anything else, NaN included, as true.
-        let part = if self.condition.get(index) != 0.0 {
-            0
-        } else {
-            1
-        };
+        let part = if self.condition.get(index) { 0 } else { 1 };
         let mut result = Vec::with_capacity(index.len() + 1);
         result.push(part);
         result.extend_from_slice(index);

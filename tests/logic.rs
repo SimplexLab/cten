@@ -232,7 +232,7 @@ fn diagonal_reduction_generalises_to_rank_three() {
 // comes out of an empty store; putting those on the diagonal gives identity.
 #[test]
 fn empty_mapping_under_a_product_yields_ones_from_an_empty_store() {
-    let empty = Rc::new(Physical::new(vec![]));
+    let empty = Rc::new(Physical::<f32>::new(vec![]));
     let ones = Rc::new(Product::new(
         empty,
         Rc::new(EmptyMapping::new(HRect::new(vec![6]), HRect::new(vec![0]))),
