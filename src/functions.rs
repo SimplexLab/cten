@@ -18,33 +18,33 @@ use crate::tensor::{
     RightComposition, Sum, SumReduction, Tensor,
 };
 
-pub fn square<V: Mul<Output = V> + Copy + 'static, U: Tensor<V> + ?Sized>(
+pub fn square<A: Mul<Output = A> + Copy + 'static, U: Tensor<A> + ?Sized>(
     u: Rc<U>,
-) -> LeftComposition<U, V> {
+) -> LeftComposition<U, A> {
     LeftComposition::new(u, |x| x * x)
 }
 
-pub fn negate<V: Neg<Output = V> + 'static, U: Tensor<V> + ?Sized>(
+pub fn negate<A: Neg<Output = A> + 'static, U: Tensor<A> + ?Sized>(
     u: Rc<U>,
-) -> LeftComposition<U, V> {
+) -> LeftComposition<U, A> {
     LeftComposition::new(u, |x| -x)
 }
 
-pub fn scale<V: Mul<Output = V> + Copy + 'static, U: Tensor<V> + ?Sized>(
+pub fn scale<A: Mul<Output = A> + Copy + 'static, U: Tensor<A> + ?Sized>(
     u: Rc<U>,
-    factor: V,
-) -> LeftComposition<U, V> {
+    factor: A,
+) -> LeftComposition<U, A> {
     LeftComposition::new(u, move |x| x * factor)
 }
 
 /// Holds values between `low` and `high`. Checking the bounds here reports the
 /// mistake where it is made, not at the first read, and rules out NaN bounds,
 /// which nothing would be below or above.
-pub fn clamp<V: PartialOrd + Copy + Display + 'static, U: Tensor<V> + ?Sized>(
+pub fn clamp<A: PartialOrd + Copy + Display + 'static, U: Tensor<A> + ?Sized>(
     u: Rc<U>,
-    low: V,
-    high: V,
-) -> LeftComposition<U, V> {
+    low: A,
+    high: A,
+) -> LeftComposition<U, A> {
     assert!(low <= high, "clamp needs low <= high, got {low} and {high}");
     LeftComposition::new(u, move |x| {
         if x < low {
@@ -59,10 +59,10 @@ pub fn clamp<V: PartialOrd + Copy + Display + 'static, U: Tensor<V> + ?Sized>(
 
 /// Reorders the axes of a tensor: `axes[i]` is the axis of `u` that becomes
 /// axis `i` of the result.
-pub fn permute<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn permute<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
     axes: Vec<usize>,
-) -> RightComposition<Permutation, V> {
+) -> RightComposition<Permutation, A> {
     let codomain = u.hrect().clone();
     RightComposition::new(u, Rc::new(Permutation::new(codomain, axes)))
 }
@@ -70,9 +70,9 @@ pub fn permute<V: 'static, U: BoxedTensor<V> + 'static>(
 /// Swaps the last two axes and leaves any leading ones alone, so a stack of
 /// matrices transposes matrix by matrix. At rank two this is the plain
 /// transpose.
-pub fn transpose<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn transpose<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
-) -> RightComposition<Permutation, V> {
+) -> RightComposition<Permutation, A> {
     let ndim = u.domain().ndim();
     assert!(ndim >= 2, "transpose needs at least two dimensions");
     let mut axes: Vec<usize> = (0..ndim).collect();
@@ -82,11 +82,11 @@ pub fn transpose<V: 'static, U: BoxedTensor<V> + 'static>(
 
 /// Moves the axis at `source` to `destination`; the axes left over keep their
 /// relative order.
-pub fn movedim<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn movedim<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
     source: usize,
     destination: usize,
-) -> RightComposition<Permutation, V> {
+) -> RightComposition<Permutation, A> {
     let ndim = u.domain().ndim();
     assert!(source < ndim, "source axis {source} is out of range");
     assert!(
@@ -101,10 +101,10 @@ pub fn movedim<V: 'static, U: BoxedTensor<V> + 'static>(
 
 /// Inserts an axis of extent 1 at `dim`, which can be anywhere from before the
 /// first axis to after the last.
-pub fn unsqueeze<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn unsqueeze<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
     dim: usize,
-) -> RightComposition<Unsqueeze, V> {
+) -> RightComposition<Unsqueeze, A> {
     let codomain = u.hrect().clone();
     RightComposition::new(u, Rc::new(Unsqueeze::new(codomain, dim)))
 }
@@ -149,10 +149,10 @@ impl Dims for &[usize] {
 /// Drops axes of extent 1, as torch's `squeeze` does: `squeeze(u, ())` drops all
 /// of them, `squeeze(u, 1)` only axis 1, and `squeeze(u, [0, 2])` axes 0 and 2.
 /// A named axis whose extent isn't 1 is left alone.
-pub fn squeeze<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn squeeze<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
     dims: impl Dims,
-) -> RightComposition<Squeeze, V> {
+) -> RightComposition<Squeeze, A> {
     let codomain = u.hrect().clone();
     let ndim = codomain.shape().len();
     let named = dims.axes(ndim);
@@ -171,10 +171,10 @@ pub fn squeeze<V: 'static, U: BoxedTensor<V> + 'static>(
 }
 
 /// Joins tensors end to end along `dim`; their other extents must agree.
-pub fn concatenate<V: 'static>(
-    tensors: Vec<Rc<dyn BoxedTensor<V>>>,
+pub fn concatenate<A: 'static>(
+    tensors: Vec<Rc<dyn BoxedTensor<A>>>,
     dim: usize,
-) -> RightComposition<Concat, V> {
+) -> RightComposition<Concat, A> {
     assert!(!tensors.is_empty(), "concatenate needs at least one tensor");
     let underlying = JaggedTensor::new(tensors);
     let codomain = underlying.jagged_domain().clone();
@@ -183,10 +183,10 @@ pub fn concatenate<V: 'static>(
 
 /// Joins tensors of one shape along a new axis at `dim`, by concatenating them
 /// once each has an axis of extent 1 there.
-pub fn stack<V: 'static>(
-    tensors: Vec<Rc<dyn BoxedTensor<V>>>,
+pub fn stack<A: 'static>(
+    tensors: Vec<Rc<dyn BoxedTensor<A>>>,
     dim: usize,
-) -> RightComposition<Concat, V> {
+) -> RightComposition<Concat, A> {
     assert!(!tensors.is_empty(), "stack needs at least one tensor");
     let shape = tensors[0].hrect().clone();
     assert!(
@@ -197,7 +197,7 @@ pub fn stack<V: 'static>(
         .into_iter()
         .map(|tensor| {
             let unsqueeze = Unsqueeze::new(tensor.hrect().clone(), dim);
-            Rc::new(RightComposition::new(tensor, Rc::new(unsqueeze))) as Rc<dyn BoxedTensor<V>>
+            Rc::new(RightComposition::new(tensor, Rc::new(unsqueeze))) as Rc<dyn BoxedTensor<A>>
         })
         .collect();
     concatenate(unsqueezed, dim)
@@ -205,11 +205,11 @@ pub fn stack<V: 'static>(
 
 /// Reads `input` where `condition` holds and `other` where it does not, as
 /// torch's `where` does. `where` is a Rust keyword, hence the underscore.
-pub fn where_<V: 'static>(
+pub fn where_<A: 'static>(
     condition: Rc<dyn BoxedTensor<bool>>,
-    input: Rc<dyn BoxedTensor<V>>,
-    other: Rc<dyn BoxedTensor<V>>,
-) -> RightComposition<Where, V> {
+    input: Rc<dyn BoxedTensor<A>>,
+    other: Rc<dyn BoxedTensor<A>>,
+) -> RightComposition<Where, A> {
     let underlying = JaggedTensor::new(vec![input, other]);
     let codomain = underlying.jagged_domain().clone();
     RightComposition::new(
@@ -221,12 +221,12 @@ pub fn where_<V: 'static>(
 /// Spreads a vector over the diagonal of a tensor of the given rank: rank two
 /// gives a diagonal matrix, rank three a tensor whose only non-zero indices
 /// are of the form `[i, i, i]`.
-pub fn diagonalize<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn diagonalize<A: 'static, U: BoxedTensor<A> + 'static>(
     u: Rc<U>,
     rank: usize,
-) -> Sum<Diagonal, V>
+) -> Sum<Diagonal, A>
 where
-    SumReduction: Reduction<V>,
+    SumReduction: Reduction<A>,
 {
     assert_eq!(u.domain().ndim(), 1, "diagonalize takes a vector");
     assert!(rank > 0, "a diagonal tensor has at least one dimension");
@@ -267,13 +267,13 @@ pub fn eye(n: usize) -> Sum<Diagonal> {
 /// `indices`, and zero everywhere else. As in torch, `indices` has one row per
 /// dimension, so column `k` is the coordinate of `values[k]`, and values at a
 /// repeated coordinate add up.
-pub fn sparse_coo_tensor<V: 'static>(
+pub fn sparse_coo_tensor<A: 'static>(
     indices: Vec<Vec<usize>>,
-    values: Rc<dyn BoxedTensor<V>>,
+    values: Rc<dyn BoxedTensor<A>>,
     size: Vec<usize>,
-) -> Sum<COO, V>
+) -> Sum<COO, A>
 where
-    SumReduction: Reduction<V>,
+    SumReduction: Reduction<A>,
 {
     assert_eq!(
         indices.len(),
@@ -312,48 +312,48 @@ where
 /// `physical` sits at `basis·x + offset`, and the tensor is zero off that
 /// lattice. `basis` has a row per dimension of `shape` and a column per
 /// dimension of `physical`. Values the lattice sends to one index add up.
-pub fn sparse_latticed_tensor<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn sparse_latticed_tensor<A: 'static, U: BoxedTensor<A> + 'static>(
     physical: Rc<U>,
     basis: Vec<Vec<i64>>,
     offset: Vec<i64>,
     shape: Vec<usize>,
-) -> Sum<InvAffine, V>
+) -> Sum<InvAffine, A>
 where
-    SumReduction: Reduction<V>,
+    SumReduction: Reduction<A>,
 {
     let affine = Affine::new(physical.hrect().clone(), basis, offset, HRect::new(shape));
     Sum::new(physical, Rc::new(InvAffine::new(affine)))
 }
 
-pub fn sum<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn sum<A: 'static, U: BoxedTensor<A> + 'static>(
     input: Rc<U>,
     dim: usize,
-) -> Sum<InvProjection, V>
+) -> Sum<InvProjection, A>
 where
-    SumReduction: Reduction<V>,
+    SumReduction: Reduction<A>,
 {
     let codomain = input.hrect().clone();
     Sum::new(input, Rc::new(InvProjection::new(codomain, dim)))
 }
 
-pub fn prod<V: 'static, U: BoxedTensor<V> + 'static>(
+pub fn prod<A: 'static, U: BoxedTensor<A> + 'static>(
     input: Rc<U>,
     dim: usize,
-) -> Product<InvProjection, V>
+) -> Product<InvProjection, A>
 where
-    ProductReduction: Reduction<V>,
+    ProductReduction: Reduction<A>,
 {
     let codomain = input.hrect().clone();
     Product::new(input, Rc::new(InvProjection::new(codomain, dim)))
 }
 
-pub fn mm<V: 'static, U1: BoxedTensor<V> + 'static, U2: BoxedTensor<V> + 'static>(
-    mat1: Rc<U1>,
-    mat2: Rc<U2>,
-) -> Sum<InvProjection, V>
+pub fn mm<A: 'static, U: BoxedTensor<A> + 'static, V: BoxedTensor<A> + 'static>(
+    mat1: Rc<U>,
+    mat2: Rc<V>,
+) -> Sum<InvProjection, A>
 where
-    SumReduction: Reduction<V>,
-    ProductReduction: Reduction<V>,
+    SumReduction: Reduction<A>,
+    ProductReduction: Reduction<A>,
 {
     assert_eq!(mat1.hrect().shape().len(), 2, "mat1 must be a matrix");
     assert_eq!(mat2.hrect().shape().len(), 2, "mat2 must be a matrix");

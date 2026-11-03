@@ -44,11 +44,11 @@ fn int_matrix(rows: usize, cols: usize, values: Vec<i64>) -> Rc<RightComposition
     ))
 }
 
-fn collect_1d<T>(tensor: &dyn Tensor<T>, len: usize) -> Vec<T> {
+fn collect_1d<A>(tensor: &dyn Tensor<A>, len: usize) -> Vec<A> {
     (0..len).map(|i| tensor.get(&[i])).collect()
 }
 
-fn collect_2d<T>(tensor: &dyn Tensor<T>, rows: usize, cols: usize) -> Vec<Vec<T>> {
+fn collect_2d<A>(tensor: &dyn Tensor<A>, rows: usize, cols: usize) -> Vec<Vec<A>> {
     (0..rows)
         .map(|i| (0..cols).map(|j| tensor.get(&[i, j])).collect())
         .collect()

@@ -6,10 +6,10 @@ use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
 
 /// A mapping from an index set to a value set. The index set is the tensor's
-/// domain, and the value set is its value type `T`, `f32` unless said
+/// domain, and the value set is its value type `A`, `f32` unless said
 /// otherwise.
-pub trait Tensor<T = f32> {
-    fn get(&self, index: &[usize]) -> T;
+pub trait Tensor<A = f32> {
+    fn get(&self, index: &[usize]) -> A;
 
     fn domain(&self) -> &dyn Domain;
 }
@@ -18,7 +18,7 @@ pub trait Tensor<T = f32> {
 /// which is all that can be checked without enumerating a domain. In
 /// particular, a mapping into flat positions needs a one-dimensional tensor
 /// under it.
-fn check_composable<T>(codomain: &dyn Domain, u: &dyn Tensor<T>) {
+fn check_composable<A>(codomain: &dyn Domain, u: &dyn Tensor<A>) {
     assert_eq!(
         codomain.ndim(),
         u.domain().ndim(),
@@ -28,20 +28,20 @@ fn check_composable<T>(codomain: &dyn Domain, u: &dyn Tensor<T>) {
     );
 }
 
-pub struct Physical<T = f32> {
-    values: Vec<T>,
+pub struct Physical<A = f32> {
+    values: Vec<A>,
     domain: HRect,
 }
 
-impl<T> Physical<T> {
-    pub fn new(values: Vec<T>) -> Self {
+impl<A> Physical<A> {
+    pub fn new(values: Vec<A>) -> Self {
         let domain = HRect::new(vec![values.len()]);
         Self { values, domain }
     }
 }
 
-impl<T: Clone> Tensor<T> for Physical<T> {
-    fn get(&self, index: &[usize]) -> T {
+impl<A: Clone> Tensor<A> for Physical<A> {
+    fn get(&self, index: &[usize]) -> A {
         assert_eq!(
             index.len(),
             1,
@@ -55,7 +55,7 @@ impl<T: Clone> Tensor<T> for Physical<T> {
     }
 }
 
-impl<T: Clone> BoxedTensor<T> for Physical<T> {
+impl<A: Clone> BoxedTensor<A> for Physical<A> {
     fn hrect(&self) -> &HRect {
         &self.domain
     }
@@ -64,13 +64,13 @@ impl<T: Clone> BoxedTensor<T> for Physical<T> {
 /// Several tensors read as one: `[t, rest..]` reads part `t` at `rest`. This is
 /// the underlying that concatenating, stacking and `where` remap into. Its domain
 /// is jagged rather than a hrect, so it is not printable.
-pub struct JaggedTensor<T = f32> {
-    parts: Vec<Rc<dyn BoxedTensor<T>>>,
+pub struct JaggedTensor<A = f32> {
+    parts: Vec<Rc<dyn BoxedTensor<A>>>,
     domain: JaggedDomain,
 }
 
-impl<T> JaggedTensor<T> {
-    pub fn new(parts: Vec<Rc<dyn BoxedTensor<T>>>) -> Self {
+impl<A> JaggedTensor<A> {
+    pub fn new(parts: Vec<Rc<dyn BoxedTensor<A>>>) -> Self {
         let domain = JaggedDomain::new(parts.iter().map(|part| part.hrect().clone()).collect());
         Self { parts, domain }
     }
@@ -80,8 +80,8 @@ impl<T> JaggedTensor<T> {
     }
 }
 
-impl<T> Tensor<T> for JaggedTensor<T> {
-    fn get(&self, index: &[usize]) -> T {
+impl<A> Tensor<A> for JaggedTensor<A> {
+    fn get(&self, index: &[usize]) -> A {
         self.parts[index[0]].get(&index[1..])
     }
 
@@ -95,20 +95,20 @@ impl<T> Tensor<T> for JaggedTensor<T> {
 // over a boxed mapping is known to give a boxed, printable tensor. Pass
 // `dyn BoxedMapping` or `dyn IndexMapping` for it to erase the mapping. The
 // values are the underlying tensor's, read elsewhere.
-pub struct RightComposition<M: ?Sized, T = f32> {
-    u: Rc<dyn Tensor<T>>,
+pub struct RightComposition<M: ?Sized, A = f32> {
+    u: Rc<dyn Tensor<A>>,
     mapping: Rc<M>,
 }
 
-impl<M: IndexMapping + ?Sized, T> RightComposition<M, T> {
-    pub fn new(u: Rc<dyn Tensor<T>>, mapping: Rc<M>) -> Self {
+impl<M: IndexMapping + ?Sized, A> RightComposition<M, A> {
+    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
         check_composable(mapping.codomain(), &*u);
         Self { u, mapping }
     }
 }
 
-impl<M: IndexMapping + ?Sized, T> Tensor<T> for RightComposition<M, T> {
-    fn get(&self, virtual_index: &[usize]) -> T {
+impl<M: IndexMapping + ?Sized, A> Tensor<A> for RightComposition<M, A> {
+    fn get(&self, virtual_index: &[usize]) -> A {
         let underlying_index = self.mapping.map(virtual_index);
         self.u.get(&underlying_index)
     }
@@ -118,7 +118,7 @@ impl<M: IndexMapping + ?Sized, T> Tensor<T> for RightComposition<M, T> {
     }
 }
 
-impl<M: BoxedMapping + ?Sized, T> BoxedTensor<T> for RightComposition<M, T> {
+impl<M: BoxedMapping + ?Sized, A> BoxedTensor<A> for RightComposition<M, A> {
     fn hrect(&self) -> &HRect {
         self.mapping.hrect()
     }
@@ -157,10 +157,10 @@ impl<U: BoxedTensor<A> + ?Sized, A, B> BoxedTensor<B> for LeftComposition<U, A, 
     }
 }
 
-/// A way of combining the values of a tensor of value type `T` into one.
-pub trait Reduction<T> {
-    const NEUTRAL: T;
-    fn combine(a: T, b: T) -> T;
+/// A way of combining the values of a tensor of value type `A` into one.
+pub trait Reduction<A> {
+    const NEUTRAL: A;
+    fn combine(a: A, b: A) -> A;
 }
 
 pub struct SumReduction;
@@ -211,14 +211,14 @@ reductions! {
 // As in a right composition, the domain is the mapping's own domain, and the
 // mapping type is a parameter so that reducing over a boxed mapping is known to
 // give a boxed, printable tensor.
-pub struct ReductionTensor<R, M: ?Sized, T = f32> {
-    u: Rc<dyn Tensor<T>>,
+pub struct ReductionTensor<R, M: ?Sized, A = f32> {
+    u: Rc<dyn Tensor<A>>,
     mapping: Rc<M>,
     _marker: PhantomData<fn() -> R>,
 }
 
-impl<R: Reduction<T>, M: PowersetMapping + ?Sized, T> ReductionTensor<R, M, T> {
-    pub fn new(u: Rc<dyn Tensor<T>>, mapping: Rc<M>) -> Self {
+impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> ReductionTensor<R, M, A> {
+    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
         check_composable(mapping.codomain(), &*u);
         Self {
             u,
@@ -228,8 +228,8 @@ impl<R: Reduction<T>, M: PowersetMapping + ?Sized, T> ReductionTensor<R, M, T> {
     }
 }
 
-impl<R: Reduction<T>, M: PowersetMapping + ?Sized, T> Tensor<T> for ReductionTensor<R, M, T> {
-    fn get(&self, index: &[usize]) -> T {
+impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> Tensor<A> for ReductionTensor<R, M, A> {
+    fn get(&self, index: &[usize]) -> A {
         let indices = self.mapping.map(index);
         let mut result = R::NEUTRAL;
         for i in &indices {
@@ -243,15 +243,15 @@ impl<R: Reduction<T>, M: PowersetMapping + ?Sized, T> Tensor<T> for ReductionTen
     }
 }
 
-impl<R: Reduction<T>, M: BoxedPowersetMapping + ?Sized, T> BoxedTensor<T>
-    for ReductionTensor<R, M, T>
+impl<R: Reduction<A>, M: BoxedPowersetMapping + ?Sized, A> BoxedTensor<A>
+    for ReductionTensor<R, M, A>
 {
     fn hrect(&self) -> &HRect {
         self.mapping.hrect()
     }
 }
 
-pub type Sum<M, T = f32> = ReductionTensor<SumReduction, M, T>;
-pub type Product<M, T = f32> = ReductionTensor<ProductReduction, M, T>;
-pub type Sup<M, T = f32> = ReductionTensor<SupReduction, M, T>;
-pub type Inf<M, T = f32> = ReductionTensor<InfReduction, M, T>;
+pub type Sum<M, A = f32> = ReductionTensor<SumReduction, M, A>;
+pub type Product<M, A = f32> = ReductionTensor<ProductReduction, M, A>;
+pub type Sup<M, A = f32> = ReductionTensor<SupReduction, M, A>;
+pub type Inf<M, A = f32> = ReductionTensor<InfReduction, M, A>;
