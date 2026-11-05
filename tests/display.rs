@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor, format_boxed,
+    BarComposition, COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor,
+    format_boxed,
 };
 
 fn physical() -> Rc<Physical> {
@@ -20,6 +21,25 @@ fn tensors_of_other_value_types_print_the_same_way() {
 
     assert_eq!(ints.to_string(), "tensor([  1, -20,   3])");
     assert_eq!(flags.to_string(), "tensor([ true, false])");
+}
+
+// The diagonal matrix of the paper's sparse matrices figure, before and after
+// its multisets of values are summed.
+#[test]
+fn a_multiset_valued_tensor_prints_its_multisets() {
+    let stored = Rc::new(Physical::new(vec![1.0, 2.0, 4.0]));
+    let diagonal = Rc::new(Diagonal::new(HRect::new(vec![3, 3])));
+    let before = BarComposition::new(stored.clone(), diagonal.clone());
+    let after = Sum::new(stored, diagonal);
+
+    assert_eq!(
+        before.to_string(),
+        "tensor([[{{1}},  {{}},  {{}}],\n        [ {{}}, {{2}},  {{}}],\n        [ {{}},  {{}}, {{4}}]])"
+    );
+    assert_eq!(
+        after.to_string(),
+        "tensor([[1, 0, 0],\n        [0, 2, 0],\n        [0, 0, 4]])"
+    );
 }
 
 #[test]

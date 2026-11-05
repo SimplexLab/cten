@@ -8,7 +8,7 @@ use std::fmt::{Display, Write as _};
 use crate::domain::HRect;
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping};
 use crate::tensor::{
-    LeftComposition, Physical, Reduction, ReductionTensor, RightComposition, Tensor,
+    BarComposition, LeftComposition, Physical, Reduction, ReductionTensor, RightComposition, Tensor,
 };
 
 /// A tensor whose domain is a hrect. Only these can be printed, since formatting
@@ -36,6 +36,12 @@ impl<M: BoxedMapping + ?Sized, A: Display> Display for RightComposition<M, A> {
 }
 
 impl<U: BoxedTensor<A> + ?Sized, A, B: Display> Display for LeftComposition<U, A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format_boxed(self))
+    }
+}
+
+impl<M: BoxedPowersetMapping + ?Sized, A: Display> Display for BarComposition<M, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
     }

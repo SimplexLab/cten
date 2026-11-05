@@ -2,9 +2,17 @@ use std::{assert_eq, collections::HashMap, rc::Rc};
 
 use cten::{
     Affine, COO, Concat, Diagonal, EmptyMapping, HRect, IndexMapping, InvAffine, InvProjection,
-    JaggedDomain, Permutation, Physical, Powerset, PowersetMapping, Projection, Squeeze, Stride,
+    JaggedDomain, Multiset, Permutation, Physical, PowersetMapping, Projection, Squeeze, Stride,
     Unsqueeze, Where,
 };
+
+/// The indices of a multiset in sorted order, to compare multisets whose
+/// elements may come out in different orders.
+fn sorted(indices: Multiset<Vec<usize>>) -> Vec<Vec<usize>> {
+    let mut elements: Vec<Vec<usize>> = indices.into_iter().collect();
+    elements.sort();
+    elements
+}
 
 #[test]
 fn a_stride_goes_from_its_hrect_to_the_flat_positions_it_reaches() {
@@ -66,8 +74,8 @@ fn an_inv_projection_sends_each_index_to_the_line_along_its_dim() {
     assert!(!inv_proj.domain().contains(&[1, 4]));
     assert!(inv_proj.codomain().contains(&[1, 2, 3]));
     assert_eq!(
-        inv_proj.map(&[1, 3]),
-        Powerset::from([vec![1, 0, 3], vec![1, 1, 3], vec![1, 2, 3]])
+        sorted(inv_proj.map(&[1, 3])),
+        vec![vec![1, 0, 3], vec![1, 1, 3], vec![1, 2, 3]]
     );
 }
 
@@ -127,8 +135,8 @@ fn an_inv_affine_sends_each_index_to_the_lattice_points_on_it() {
     assert!(inv_affine.domain().contains(&[8]));
     assert!(!inv_affine.domain().contains(&[9]));
     assert!(inv_affine.codomain().contains(&[2]));
-    assert_eq!(inv_affine.map(&[4]), Powerset::from([vec![1]]));
-    assert_eq!(inv_affine.map(&[5]), Powerset::new());
+    assert_eq!(sorted(inv_affine.map(&[4])), vec![vec![1]]);
+    assert!(inv_affine.map(&[5]).is_empty());
 }
 
 // Dropping the middle axis is affine too, and sends several indices onto each
@@ -145,7 +153,10 @@ fn an_inv_affine_of_a_projection_matches_the_inv_projection() {
 
     for m in 0..2 {
         for p in 0..4 {
-            assert_eq!(inv_affine.map(&[m, p]), inv_proj.map(&[m, p]));
+            assert_eq!(
+                sorted(inv_affine.map(&[m, p])),
+                sorted(inv_proj.map(&[m, p]))
+            );
         }
     }
 }
@@ -174,7 +185,8 @@ fn assert_inv_affine_matches_a_scan(
     physical: Vec<usize>,
     shape: Vec<usize>,
 ) {
-    let mut expected: HashMap<Vec<usize>, Powerset> = HashMap::new();
+    // Scanned in row-major order, so each list of indices comes out sorted.
+    let mut expected: HashMap<Vec<usize>, Vec<Vec<usize>>> = HashMap::new();
     for x in indices(&physical) {
         let y = basis
             .iter()
@@ -188,7 +200,7 @@ fn assert_inv_affine_matches_a_scan(
                 (start + coord) as usize
             })
             .collect();
-        expected.entry(y).or_default().insert(x);
+        expected.entry(y).or_default().push(x);
     }
     let inv_affine = InvAffine::new(Affine::new(
         HRect::new(physical),
@@ -198,7 +210,7 @@ fn assert_inv_affine_matches_a_scan(
     ));
     for y in indices(&shape) {
         let lands = expected.remove(&y).unwrap_or_default();
-        assert_eq!(inv_affine.map(&y), lands, "at {y:?}");
+        assert_eq!(sorted(inv_affine.map(&y)), lands, "at {y:?}");
     }
 }
 

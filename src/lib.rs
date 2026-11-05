@@ -6,6 +6,7 @@ pub mod domain;
 pub mod functions;
 mod lattice;
 pub mod mapping;
+pub mod multiset;
 pub mod signature;
 pub mod tensor;
 
@@ -18,11 +19,13 @@ pub use functions::{
 };
 pub use mapping::{
     Affine, BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
-    InvAffine, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Squeeze, Stride,
-    Unsqueeze, Where,
+    InvAffine, InvProjection, Permutation, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
+    Where,
 };
+pub use multiset::Multiset;
 pub use signature::{HRectSignature, Signature};
 pub use tensor::{
-    Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product, ProductReduction,
-    Reduction, ReductionTensor, RightComposition, Sum, SumReduction, Sup, SupReduction, Tensor,
+    Bar, BarComposition, Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product,
+    ProductReduction, Reduction, ReductionTensor, RightComposition, Sum, SumReduction, Sup,
+    SupReduction, Tensor,
 };

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    BoxedTensor, COO, Diagonal, HRect, JaggedTensor, LeftComposition, Physical, RightComposition,
-    Stride, Sum, Tensor,
+    Bar, BarComposition, BoxedTensor, COO, Diagonal, HRect, InvProjection, JaggedTensor,
+    LeftComposition, Multiset, Physical, RightComposition, Stride, Sum, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -66,6 +66,50 @@ fn a_left_composition_takes_its_domain_from_the_tensor_it_transforms() {
     assert!(squared.domain().contains(&[2, 1]));
     assert!(!squared.domain().contains(&[3, 0]));
     assert_eq!(squared.get(&[2, 1]), 36.0);
+}
+
+// A multiset of indices reads a multiset of values, repeats included.
+#[test]
+fn a_bar_reads_a_multiset_of_values_at_a_multiset_of_indices() {
+    let bar = Bar::new(physical());
+    let read = bar.get(&Multiset::new(vec![vec![0], vec![2], vec![2]]));
+
+    assert_eq!(read.into_iter().collect::<Vec<f32>>(), vec![1.0, 3.0, 3.0]);
+    assert!(bar.get(&Multiset::default()).is_empty());
+}
+
+/// The matrix of the paper's row sums example, `[[1, 2, 3], [0, 4, 1], [2, 2, 5]]`.
+fn figure_matrix() -> Rc<RightComposition<Stride>> {
+    Rc::new(RightComposition::new(
+        Rc::new(Physical::new(vec![
+            1.0, 2.0, 3.0, 0.0, 4.0, 1.0, 2.0, 2.0, 5.0,
+        ])),
+        Rc::new(Stride::new(HRect::new(vec![3, 3]), vec![3, 1])),
+    ))
+}
+
+// Before reduction, each row index reads the multiset of its row; reducing those
+// multisets with a sum gives the row sums.
+#[test]
+fn a_bar_composition_is_a_reduction_before_the_reduction() {
+    let rows = Rc::new(InvProjection::new(HRect::new(vec![3, 3]), 1));
+    let gathered = BarComposition::new(figure_matrix(), rows.clone());
+    let row_sums = Sum::new(figure_matrix(), rows);
+
+    assert_eq!(gathered.hrect().shape(), &[3]);
+    let before: Vec<Vec<f32>> = (0..3)
+        .map(|i| gathered.get(&[i]).into_iter().collect())
+        .collect();
+    assert_eq!(
+        before,
+        vec![
+            vec![1.0, 2.0, 3.0],
+            vec![0.0, 4.0, 1.0],
+            vec![2.0, 2.0, 5.0]
+        ]
+    );
+    let after: Vec<f32> = (0..3).map(|i| row_sums.get(&[i])).collect();
+    assert_eq!(after, vec![6.0, 5.0, 9.0]);
 }
 
 #[test]

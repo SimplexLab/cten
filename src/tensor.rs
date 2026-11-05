@@ -4,6 +4,7 @@ use std::rc::Rc;
 use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
+use crate::multiset::Multiset;
 
 /// A mapping from an index set to a value set. The index set is the tensor's
 /// domain, and the value set is its value type `A`, `f32` unless said
@@ -161,6 +162,13 @@ impl<U: BoxedTensor<A> + ?Sized, A, B> BoxedTensor<B> for LeftComposition<U, A, 
 pub trait Reduction<A> {
     const NEUTRAL: A;
     fn combine(a: A, b: A) -> A;
+
+    /// Reduces a multiset to a single value: the neutral element for the empty
+    /// multiset, its element for a multiset of one, and otherwise its elements
+    /// combined in any order, as `combine` is associative and commutative.
+    fn reduce(multiset: Multiset<A>) -> A {
+        multiset.into_iter().fold(Self::NEUTRAL, Self::combine)
+    }
 }
 
 pub struct SumReduction;
@@ -208,34 +216,47 @@ reductions! {
     i64: 0, 1, i64::MIN, i64::MAX;
 }
 
-// As in a right composition, the domain is the mapping's own domain, and the
-// mapping type is a parameter so that reducing over a boxed mapping is known to
-// give a boxed, printable tensor.
-pub struct ReductionTensor<R, M: ?Sized, A = f32> {
+/// The extension of a tensor `U` to multisets, written `Ū`: it maps a multiset of
+/// indices to the multiset of the values of `U` at them, repeats included. Its
+/// indices being multisets, it is not a tensor itself; composed with an index
+/// function, it gives one.
+pub struct Bar<A = f32> {
     u: Rc<dyn Tensor<A>>,
-    mapping: Rc<M>,
-    _marker: PhantomData<fn() -> R>,
 }
 
-impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> ReductionTensor<R, M, A> {
+impl<A> Bar<A> {
+    pub fn new(u: Rc<dyn Tensor<A>>) -> Self {
+        Self { u }
+    }
+
+    pub fn get(&self, indices: &Multiset<Vec<usize>>) -> Multiset<A> {
+        indices.iter().map(|index| self.u.get(index)).collect()
+    }
+}
+
+// `Ū ∘ ψ`: at each index, the multiset of the values of `U` at the indices `ψ`
+// maps it to. This is the multiset-valued tensor a reduction reduces. As in a
+// right composition, the domain is the mapping's own domain, and the mapping
+// type is a parameter so that a boxed mapping is known to give a boxed,
+// printable tensor.
+pub struct BarComposition<M: ?Sized, A = f32> {
+    bar: Bar<A>,
+    mapping: Rc<M>,
+}
+
+impl<M: PowersetMapping + ?Sized, A> BarComposition<M, A> {
     pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
         check_composable(mapping.codomain(), &*u);
         Self {
-            u,
+            bar: Bar::new(u),
             mapping,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> Tensor<A> for ReductionTensor<R, M, A> {
-    fn get(&self, index: &[usize]) -> A {
-        let indices = self.mapping.map(index);
-        let mut result = R::NEUTRAL;
-        for i in &indices {
-            result = R::combine(result, self.u.get(i));
-        }
-        result
+impl<M: PowersetMapping + ?Sized, A> Tensor<Multiset<A>> for BarComposition<M, A> {
+    fn get(&self, index: &[usize]) -> Multiset<A> {
+        self.bar.get(&self.mapping.map(index))
     }
 
     fn domain(&self) -> &dyn Domain {
@@ -243,11 +264,42 @@ impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> Tensor<A> for ReductionTen
     }
 }
 
+impl<M: BoxedPowersetMapping + ?Sized, A> BoxedTensor<Multiset<A>> for BarComposition<M, A> {
+    fn hrect(&self) -> &HRect {
+        self.mapping.hrect()
+    }
+}
+
+// `Ω ∘ Ū ∘ ψ`: the reduction `R` of the multisets that a bar composition gathers.
+pub struct ReductionTensor<R, M: ?Sized, A = f32> {
+    gathered: BarComposition<M, A>,
+    _marker: PhantomData<fn() -> R>,
+}
+
+impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> ReductionTensor<R, M, A> {
+    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
+        Self {
+            gathered: BarComposition::new(u, mapping),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> Tensor<A> for ReductionTensor<R, M, A> {
+    fn get(&self, index: &[usize]) -> A {
+        R::reduce(self.gathered.get(index))
+    }
+
+    fn domain(&self) -> &dyn Domain {
+        self.gathered.domain()
+    }
+}
+
 impl<R: Reduction<A>, M: BoxedPowersetMapping + ?Sized, A> BoxedTensor<A>
     for ReductionTensor<R, M, A>
 {
     fn hrect(&self) -> &HRect {
-        self.mapping.hrect()
+        self.gathered.hrect()
     }
 }
 

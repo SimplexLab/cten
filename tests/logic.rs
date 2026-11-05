@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    Affine, COO, Diagonal, EmptyMapping, HRect, Inf, LeftComposition, Physical, PowersetMapping,
-    Product, RightComposition, Stride, Sum, Sup, Tensor,
+    Affine, COO, Diagonal, EmptyMapping, HRect, HRectSignature, Inf, LeftComposition, Multiset,
+    Physical, PowersetMapping, Product, RightComposition, Stride, Sum, Sup, Tensor,
 };
 
 fn physical() -> Rc<Physical> {
@@ -162,9 +162,9 @@ fn each_reduction_falls_back_to_its_neutral_element() {
     assert_eq!(inf.get(&off_support), f32::INFINITY);
 }
 
-// The demo's COO patterns all use distinct coordinates, so every Powerset it
-// builds holds at most one index and the fold in ReductionTensor never runs.
-// These patterns deliberately store several positions at one coordinate.
+// The demo's COO patterns all use distinct coordinates, so every multiset it
+// builds holds at most one index and a reduction has nothing to combine. These
+// patterns deliberately store several positions at one coordinate.
 #[test]
 fn reductions_accumulate_over_every_matching_position() {
     let overlapping = || {
@@ -284,7 +284,7 @@ fn a_powerset_mapping_can_be_used_directly() {
     let selected = diagonal.map(&[4, 4]);
 
     assert_eq!(selected.len(), 1);
-    assert!(selected.contains([4].as_slice()));
+    assert!(selected.iter().any(|index| index == &[4]));
     assert!(diagonal.map(&[4, 5]).is_empty());
 }
 
@@ -309,4 +309,39 @@ fn an_affine_mapping_reads_a_lattice_out_of_a_tensor() {
 
     let read: Vec<f32> = (0..3).map(|i| diagonal.get(&[i])).collect();
     assert_eq!(read, vec![1.0, 5.0, 9.0]);
+}
+
+/// An index function sending each index to the multiset holding it twice.
+struct Twice {
+    signature: HRectSignature,
+}
+
+// Named in full, as importing it would make `map` ambiguous in the tests above.
+impl cten::mapping::HRectPowersetMapping for Twice {
+    type Codomain = HRect;
+
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
+        Multiset::new(vec![index.to_vec(), index.to_vec()])
+    }
+
+    fn signature(&self) -> &HRectSignature {
+        &self.signature
+    }
+}
+
+// Index functions map to multisets, so an index can be met more than once, and
+// a reduction then counts its value as many times.
+#[test]
+fn a_reduction_counts_an_index_as_often_as_it_is_repeated() {
+    let twice = Rc::new(Twice {
+        signature: HRectSignature::new(HRect::new(vec![6]), HRect::new(vec![6])),
+    });
+    let doubled = Sum::new(physical(), twice.clone());
+    let squared = Product::new(physical(), twice);
+
+    for i in 0..6 {
+        let value = (i + 1) as f32;
+        assert_eq!(doubled.get(&[i]), 2.0 * value);
+        assert_eq!(squared.get(&[i]), value * value);
+    }
 }

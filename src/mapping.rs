@@ -1,13 +1,10 @@
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::lattice::Preimage;
+use crate::multiset::Multiset;
 use crate::signature::{HRectSignature, Signature};
-
-/// A set of indices, as returned by a `PowersetMapping`.
-pub type Powerset = HashSet<Vec<usize>>;
 
 /// A mapping between two index sets, from its domain to its codomain.
 pub trait IndexMapping {
@@ -24,11 +21,11 @@ pub trait BoxedMapping: IndexMapping {
     fn hrect(&self) -> &HRect;
 }
 
-/// A mapping sending each index of its domain to a set of indices of its
-/// codomain. Note that the codomain is the set the returned indices are drawn
-/// from, not its powerset.
+/// A mapping sending each index of its domain to a multiset of indices of its
+/// codomain, an index function in the paper's terms. Note that the codomain is
+/// the set the returned indices are drawn from, not its multisets.
 pub trait PowersetMapping {
-    fn map(&self, index: &[usize]) -> Powerset;
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>>;
 
     fn domain(&self) -> &dyn Domain;
 
@@ -77,13 +74,13 @@ impl<M: HRectMapping> BoxedMapping for M {
 pub trait HRectPowersetMapping {
     type Codomain: Domain;
 
-    fn map(&self, index: &[usize]) -> Powerset;
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>>;
 
     fn signature(&self) -> &Signature<HRect, Self::Codomain>;
 }
 
 impl<M: HRectPowersetMapping> PowersetMapping for M {
-    fn map(&self, index: &[usize]) -> Powerset {
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         HRectPowersetMapping::map(self, index)
     }
 
@@ -408,8 +405,8 @@ impl EmptyMapping {
 impl HRectPowersetMapping for EmptyMapping {
     type Codomain = HRect;
 
-    fn map(&self, _index: &[usize]) -> Powerset {
-        Powerset::new()
+    fn map(&self, _index: &[usize]) -> Multiset<Vec<usize>> {
+        Multiset::default()
     }
 
     fn signature(&self) -> &HRectSignature {
@@ -439,15 +436,15 @@ impl COO {
 impl HRectPowersetMapping for COO {
     type Codomain = HRect;
 
-    fn map(&self, index: &[usize]) -> Powerset {
-        let mut result = Powerset::new();
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
+        let mut result = Multiset::default();
         for (j, coords) in self.inverse_coords.iter().enumerate() {
             let matches = coords
                 .iter()
                 .enumerate()
                 .all(|(i, coord)| *coord == index[i]);
             if matches {
-                result.insert(vec![j]);
+                result.push(vec![j]);
             }
         }
         result
@@ -476,15 +473,15 @@ impl Diagonal {
 impl HRectPowersetMapping for Diagonal {
     type Codomain = HRect;
 
-    fn map(&self, index: &[usize]) -> Powerset {
-        let mut result = Powerset::new();
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
+        let mut result = Multiset::default();
         let first = index[0];
         for coord in index {
             if *coord != first {
                 return result;
             }
         }
-        result.insert(vec![first]);
+        result.push(vec![first]);
         result
     }
 
@@ -557,7 +554,7 @@ impl InvProjection {
 impl HRectPowersetMapping for InvProjection {
     type Codomain = HRect;
 
-    fn map(&self, index: &[usize]) -> Powerset {
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         (0..self.signature.codomain().shape()[self.dim])
             .map(|coord| {
                 let mut result = index.to_vec();
@@ -685,7 +682,7 @@ impl InvAffine {
 impl HRectPowersetMapping for InvAffine {
     type Codomain = HRect;
 
-    fn map(&self, index: &[usize]) -> Powerset {
+    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         let target: Vec<i64> = index
             .iter()
             .zip(&self.offset)
