@@ -1,21 +1,17 @@
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::domain::{Domain, HRect, JaggedDomain};
-use crate::function::{Boxed, Compose, Function, MultisetLift};
+use crate::domain::{HRect, JaggedDomain};
+use crate::function::{Compose, Function, MultiFunction};
 use crate::multiset::Multiset;
+use crate::set::{Multisets, Set, Values};
 
-/// A function from indices to values, with values of type `A`, `f32` unless
-/// said otherwise. Nothing implements this directly: every function of that
-/// type is a tensor.
-pub trait Tensor<A = f32>: Function<Input = [usize], Output = A> {}
+/// A function from the indices of `D` to values of type `A`: by default, a
+/// tensor on a hrect, which can be printed. Nothing implements this directly:
+/// every function of that kind is a tensor.
+pub trait Tensor<A = f32, D = HRect>: Function<Domain = D, Codomain = Values<A>> {}
 
-impl<A, T: Function<Input = [usize], Output = A> + ?Sized> Tensor<A> for T {}
-
-/// A tensor whose domain is a hrect, hence a printable one.
-pub trait BoxedTensor<A = f32>: Tensor<A> + Boxed {}
-
-impl<A, T: Tensor<A> + Boxed + ?Sized> BoxedTensor<A> for T {}
+impl<A, D: Set, T: Function<Domain = D, Codomain = Values<A>> + ?Sized> Tensor<A, D> for T {}
 
 pub struct Physical<A = f32> {
     values: Vec<A>,
@@ -30,8 +26,8 @@ impl<A> Physical<A> {
 }
 
 impl<A: Clone> Function for Physical<A> {
-    type Input = [usize];
-    type Output = A;
+    type Domain = HRect;
+    type Codomain = Values<A>;
 
     fn apply(&self, index: &[usize]) -> A {
         assert_eq!(
@@ -42,14 +38,12 @@ impl<A: Clone> Function for Physical<A> {
         self.values[index[0]].clone()
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
-        Some(&self.domain)
+    fn domain(&self) -> HRect {
+        self.domain.clone()
     }
-}
 
-impl<A: Clone> Boxed for Physical<A> {
-    fn hrect(&self) -> &HRect {
-        &self.domain
+    fn codomain(&self) -> Values<A> {
+        Values::new()
     }
 }
 
@@ -57,31 +51,31 @@ impl<A: Clone> Boxed for Physical<A> {
 /// the paper's stack, which concatenating, stacking and `where` remap into. Its
 /// domain is jagged rather than a hrect, so it is not printable.
 pub struct JaggedTensor<A = f32> {
-    parts: Vec<Rc<dyn BoxedTensor<A>>>,
+    parts: Vec<Rc<dyn Tensor<A>>>,
     domain: JaggedDomain,
 }
 
 impl<A> JaggedTensor<A> {
-    pub fn new(parts: Vec<Rc<dyn BoxedTensor<A>>>) -> Self {
-        let domain = JaggedDomain::new(parts.iter().map(|part| part.hrect().clone()).collect());
+    pub fn new(parts: Vec<Rc<dyn Tensor<A>>>) -> Self {
+        let domain = JaggedDomain::new(parts.iter().map(|part| part.domain()).collect());
         Self { parts, domain }
-    }
-
-    pub fn jagged_domain(&self) -> &JaggedDomain {
-        &self.domain
     }
 }
 
 impl<A> Function for JaggedTensor<A> {
-    type Input = [usize];
-    type Output = A;
+    type Domain = JaggedDomain;
+    type Codomain = Values<A>;
 
     fn apply(&self, index: &[usize]) -> A {
         self.parts[index[0]].apply(&index[1..])
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
-        Some(&self.domain)
+    fn domain(&self) -> JaggedDomain {
+        self.domain.clone()
+    }
+
+    fn codomain(&self) -> Values<A> {
+        Values::new()
     }
 }
 
@@ -160,11 +154,19 @@ impl<R, A> Default for Reduce<R, A> {
 }
 
 impl<R: Reduction<A>, A: Clone> Function for Reduce<R, A> {
-    type Input = Multiset<A>;
-    type Output = A;
+    type Domain = Multisets<Values<A>>;
+    type Codomain = Values<A>;
 
     fn apply(&self, multiset: &Multiset<A>) -> A {
         multiset.iter().cloned().fold(R::NEUTRAL, R::combine)
+    }
+
+    fn domain(&self) -> Multisets<Values<A>> {
+        Multisets::new(Values::new())
+    }
+
+    fn codomain(&self) -> Values<A> {
+        Values::new()
     }
 }
 
@@ -177,4 +179,4 @@ pub type Inf<A = f32> = Reduce<InfReduction, A>;
 /// underlying tensor `U` and index function `M`: at each index, the reduction
 /// of the multiset of the values of `U` at the indices `M` maps it to. Built
 /// as `compose(Sum::new(), compose(multiset_lift(u), psi))`.
-pub type ReductionTensor<R, U, M> = Compose<R, Compose<MultisetLift<U>, M>>;
+pub type ReductionTensor<R, U, M> = Compose<R, Compose<MultiFunction<U>, M>>;

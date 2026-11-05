@@ -39,8 +39,8 @@ fn a_coo_goes_from_its_hrect_to_the_positions_it_stores() {
 
     assert!(coo.signature().domain().contains(&[5, 4]));
     assert!(!coo.signature().domain().contains(&[6, 0]));
-    assert!(coo.signature().codomain().contains(&[2]));
-    assert!(!coo.signature().codomain().contains(&[3]));
+    assert!(coo.signature().codomain().set().contains(&[2]));
+    assert!(!coo.signature().codomain().set().contains(&[3]));
 }
 
 #[test]
@@ -50,8 +50,8 @@ fn a_diagonal_reaches_as_far_as_its_shortest_dimension() {
     assert_eq!(diagonal.signature().domain().ndim(), 3);
     assert!(diagonal.signature().domain().contains(&[3, 3, 3]));
     assert!(!diagonal.signature().domain().contains(&[3, 5, 3]));
-    assert!(diagonal.signature().codomain().contains(&[3]));
-    assert!(!diagonal.signature().codomain().contains(&[4]));
+    assert!(diagonal.signature().codomain().set().contains(&[3]));
+    assert!(!diagonal.signature().codomain().set().contains(&[4]));
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn an_inv_projection_sends_each_index_to_the_line_along_its_dim() {
     assert_eq!(inv_proj.signature().domain().ndim(), 2);
     assert!(inv_proj.signature().domain().contains(&[1, 3]));
     assert!(!inv_proj.signature().domain().contains(&[1, 4]));
-    assert!(inv_proj.signature().codomain().contains(&[1, 2, 3]));
+    assert!(inv_proj.signature().codomain().set().contains(&[1, 2, 3]));
     assert_eq!(
         sorted(inv_proj.map(&[1, 3])),
         vec![vec![1, 0, 3], vec![1, 1, 3], vec![1, 2, 3]]
@@ -134,7 +134,7 @@ fn an_inv_affine_sends_each_index_to_the_lattice_points_on_it() {
 
     assert!(inv_affine.signature().domain().contains(&[8]));
     assert!(!inv_affine.signature().domain().contains(&[9]));
-    assert!(inv_affine.signature().codomain().contains(&[2]));
+    assert!(inv_affine.signature().codomain().set().contains(&[2]));
     assert_eq!(sorted(inv_affine.map(&[4])), vec![vec![1]]);
     assert!(inv_affine.map(&[5]).is_empty());
 }
@@ -335,7 +335,7 @@ fn an_empty_mapping_keeps_the_domain_and_codomain_it_was_given() {
 
     assert!(empty.signature().domain().contains(&[5]));
     assert!(!empty.signature().domain().contains(&[6]));
-    assert!(!empty.signature().codomain().contains(&[0]));
+    assert!(!empty.signature().codomain().set().contains(&[0]));
     assert!(empty.map(&[5]).is_empty());
 }
 

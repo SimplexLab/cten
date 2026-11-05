@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use cten::{
-    Affine, COO, Diagonal, EmptyMapping, Function, HRect, HRectSignature, Inf, Mapping, Multiset,
-    Physical, Product, Stride, Sum, Sup, Tensor, ValueFunction, compose, multiset_lift,
+    Affine, COO, Diagonal, EmptyMapping, Function, HRect, IndexFunctionSignature, Inf, Mapping,
+    Multiset, Multisets, Physical, Product, Stride, Sum, Sup, Tensor, ValueFunction, compose,
+    multiset_lift,
 };
 
 fn physical() -> Rc<Physical> {
@@ -78,7 +79,7 @@ fn a_zero_stride_broadcasts_along_its_axis() {
 // A mapping into flat positions needs a one-dimensional tensor under it. That
 // used to be a matter of index types; it is now checked when composing.
 #[test]
-#[should_panic(expected = "indexed by 2 coordinates")]
+#[should_panic(expected = "does not lie in")]
 fn composing_over_a_tensor_of_the_wrong_rank_is_rejected() {
     let strided = Rc::new(compose(
         physical(),
@@ -340,18 +341,17 @@ fn an_affine_mapping_reads_a_lattice_out_of_a_tensor() {
 
 /// An index function sending each index to the multiset holding it twice.
 struct Twice {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
 }
 
 impl Mapping for Twice {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         Multiset::new(vec![index.to_vec(), index.to_vec()])
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }
@@ -361,7 +361,10 @@ impl Mapping for Twice {
 #[test]
 fn a_reduction_counts_an_index_as_often_as_it_is_repeated() {
     let twice = Rc::new(Twice {
-        signature: HRectSignature::new(HRect::new(vec![6]), HRect::new(vec![6])),
+        signature: IndexFunctionSignature::new(
+            HRect::new(vec![6]),
+            Multisets::new(HRect::new(vec![6])),
+        ),
     });
     let doubled = compose(
         Sum::new(),

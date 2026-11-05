@@ -1,14 +1,15 @@
 //! The domain and codomain a mapping runs between.
 
-use crate::domain::{Domain, HRect};
+use crate::domain::HRect;
+use crate::set::Set;
 
 /// The domain and codomain a mapping runs between.
-pub struct Signature<D: Domain, C: Domain> {
+pub struct Signature<D: Set, C: Set> {
     domain: D,
     codomain: C,
 }
 
-impl<D: Domain, C: Domain> Signature<D, C> {
+impl<D: Set, C: Set> Signature<D, C> {
     pub fn new(domain: D, codomain: C) -> Self {
         Self { domain, codomain }
     }

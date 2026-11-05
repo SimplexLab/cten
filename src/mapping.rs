@@ -1,46 +1,43 @@
 use std::rc::Rc;
 
 use crate::domain::{Domain, HRect, JaggedDomain};
-use crate::function::{Boxed, Function};
+use crate::function::Function;
 use crate::lattice::Preimage;
 use crate::multiset::Multiset;
+use crate::set::{Multisets, Set};
 use crate::signature::{HRectSignature, Signature};
-use crate::tensor::BoxedTensor;
+use crate::tensor::Tensor;
 
-/// A function on the indices of a hrect: an index map when `Output` is an index
-/// of its codomain, and an index function when it is a multiset of them. The
-/// codomain is the set those indices are drawn from. Implementing this gets
-/// `Function` and `Boxed` for free, with the domain and codomain of the
-/// signature.
+/// The signature of an index function: from a hrect to the multisets of
+/// indices of another.
+pub type IndexFunctionSignature = Signature<HRect, Multisets<HRect>>;
+
+/// A function on the indices of a hrect: an index map when its codomain is a
+/// set of indices, and an index function when it is the multisets of one.
+/// Implementing this gets `Function` for free, with the domain and codomain of
+/// the signature.
 pub trait Mapping {
-    type Output;
-    type Codomain: Domain;
+    type Codomain: Set;
 
-    fn map(&self, index: &[usize]) -> Self::Output;
+    fn map(&self, index: &[usize]) -> <Self::Codomain as Set>::Owned;
 
     fn signature(&self) -> &Signature<HRect, Self::Codomain>;
 }
 
 impl<M: Mapping> Function for M {
-    type Input = [usize];
-    type Output = M::Output;
+    type Domain = HRect;
+    type Codomain = M::Codomain;
 
-    fn apply(&self, index: &[usize]) -> M::Output {
+    fn apply(&self, index: &[usize]) -> <M::Codomain as Set>::Owned {
         self.map(index)
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
-        Some(self.signature().domain())
+    fn domain(&self) -> HRect {
+        self.signature().domain().clone()
     }
 
-    fn codomain(&self) -> Option<&dyn Domain> {
-        Some(self.signature().codomain())
-    }
-}
-
-impl<M: Mapping> Boxed for M {
-    fn hrect(&self) -> &HRect {
-        self.signature().domain()
+    fn codomain(&self) -> M::Codomain {
+        self.signature().codomain().clone()
     }
 }
 
@@ -81,7 +78,6 @@ fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
 }
 
 impl Mapping for Stride {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -132,7 +128,6 @@ impl Permutation {
 }
 
 impl Mapping for Permutation {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -172,7 +167,6 @@ impl Unsqueeze {
 }
 
 impl Mapping for Unsqueeze {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -220,7 +214,6 @@ impl Squeeze {
 }
 
 impl Mapping for Squeeze {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -275,7 +268,6 @@ impl Concat {
 }
 
 impl Mapping for Concat {
-    type Output = Vec<usize>;
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -300,20 +292,20 @@ impl Mapping for Concat {
 /// tensor's values and not only on the index itself.
 pub struct Where {
     signature: Signature<HRect, JaggedDomain>,
-    condition: Rc<dyn BoxedTensor<bool>>,
+    condition: Rc<dyn Tensor<bool>>,
 }
 
 impl Where {
     /// Takes the codomain, the two tensors picked from. The domain is their
     /// common shape, which `condition` must share.
-    pub fn new(codomain: JaggedDomain, condition: Rc<dyn BoxedTensor<bool>>) -> Self {
+    pub fn new(codomain: JaggedDomain, condition: Rc<dyn Tensor<bool>>) -> Self {
         let parts = codomain.parts();
         assert_eq!(parts.len(), 2, "where picks from exactly two tensors");
         let shape = parts[0].clone();
         assert!(
-            parts[1] == shape && *condition.hrect() == shape,
+            parts[1] == shape && condition.domain() == shape,
             "where needs its condition and both tensors to have one shape, got {:?}, {:?} and {:?}",
-            condition.hrect().shape(),
+            condition.domain().shape(),
             parts[0].shape(),
             parts[1].shape()
         );
@@ -325,7 +317,6 @@ impl Where {
 }
 
 impl Mapping for Where {
-    type Output = Vec<usize>;
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -342,32 +333,31 @@ impl Mapping for Where {
 }
 
 pub struct EmptyMapping {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
 }
 
 impl EmptyMapping {
     pub fn new(domain: HRect, codomain: HRect) -> Self {
         Self {
-            signature: HRectSignature::new(domain, codomain),
+            signature: IndexFunctionSignature::new(domain, Multisets::new(codomain)),
         }
     }
 }
 
 impl Mapping for EmptyMapping {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, _index: &[usize]) -> Multiset<Vec<usize>> {
         Multiset::default()
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }
 
 pub struct COO {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
     inverse_coords: Vec<Vec<usize>>,
 }
 
@@ -375,7 +365,7 @@ impl COO {
     pub fn new(domain: HRect, inverse_coords: Vec<Vec<usize>>) -> Self {
         let codomain = HRect::new(vec![inverse_coords.len()]);
         Self {
-            signature: HRectSignature::new(domain, codomain),
+            signature: IndexFunctionSignature::new(domain, Multisets::new(codomain)),
             inverse_coords,
         }
     }
@@ -386,8 +376,7 @@ impl COO {
 }
 
 impl Mapping for COO {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         let mut result = Multiset::default();
@@ -403,13 +392,13 @@ impl Mapping for COO {
         result
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }
 
 pub struct Diagonal {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
 }
 
 impl Diagonal {
@@ -418,14 +407,16 @@ impl Diagonal {
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
         Self {
-            signature: HRectSignature::new(domain, HRect::new(vec![extent])),
+            signature: IndexFunctionSignature::new(
+                domain,
+                Multisets::new(HRect::new(vec![extent])),
+            ),
         }
     }
 }
 
 impl Mapping for Diagonal {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         let mut result = Multiset::default();
@@ -439,7 +430,7 @@ impl Mapping for Diagonal {
         result
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }
@@ -468,7 +459,6 @@ impl Projection {
 }
 
 impl Mapping for Projection {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -485,7 +475,7 @@ impl Mapping for Projection {
 /// The inverse of the projection dropping axis `dim`.
 /// e.g. with dim=1, f(m, p) = {[m n p]^T | n in \[N\]}
 pub struct InvProjection {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
     dim: usize,
 }
 
@@ -500,18 +490,17 @@ impl InvProjection {
         let mut shape = codomain.shape().to_vec();
         shape.remove(dim);
         Self {
-            signature: HRectSignature::new(HRect::new(shape), codomain),
+            signature: IndexFunctionSignature::new(HRect::new(shape), Multisets::new(codomain)),
             dim,
         }
     }
 }
 
 impl Mapping for InvProjection {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
-        (0..self.signature.codomain().shape()[self.dim])
+        (0..self.signature.codomain().set().shape()[self.dim])
             .map(|coord| {
                 let mut result = index.to_vec();
                 result.insert(self.dim, coord);
@@ -520,7 +509,7 @@ impl Mapping for InvProjection {
             .collect()
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }
@@ -580,7 +569,6 @@ impl Affine {
 }
 
 impl Mapping for Affine {
-    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -612,7 +600,7 @@ impl Mapping for Affine {
 /// `basis·x = index - offset`, so a read costs about as much as the basis is
 /// large, however large the tensors.
 pub struct InvAffine {
-    signature: HRectSignature,
+    signature: IndexFunctionSignature,
     offset: Vec<i64>,
     preimage: Preimage,
 }
@@ -626,9 +614,9 @@ impl InvAffine {
         } = affine;
         let preimage = Preimage::new(&basis, signature.domain().shape());
         Self {
-            signature: HRectSignature::new(
+            signature: IndexFunctionSignature::new(
                 signature.codomain().clone(),
-                signature.domain().clone(),
+                Multisets::new(signature.domain().clone()),
             ),
             offset,
             preimage,
@@ -637,8 +625,7 @@ impl InvAffine {
 }
 
 impl Mapping for InvAffine {
-    type Output = Multiset<Vec<usize>>;
-    type Codomain = HRect;
+    type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         let target: Vec<i64> = index
@@ -649,7 +636,7 @@ impl Mapping for InvAffine {
         self.preimage.solve(&target).into_iter().collect()
     }
 
-    fn signature(&self) -> &HRectSignature {
+    fn signature(&self) -> &IndexFunctionSignature {
         &self.signature
     }
 }

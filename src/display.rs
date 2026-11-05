@@ -1,18 +1,18 @@
-//! Printing of boxed tensors: those whose domain is a hrect. The `Display`
-//! implementations live here rather than next to each tensor, since they all
-//! render the same way, by walking a shape.
+//! Printing of functions on a hrect: tensors, and multiset-valued tensors before
+//! a reduction. The `Display` implementations live here rather than next to
+//! each tensor, since they all render the same way, by walking a shape.
 
-use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Display, Write as _};
 
-use crate::function::{Boxed, Compose, Function};
-use crate::tensor::{BoxedTensor, Physical};
+use crate::domain::HRect;
+use crate::function::{Compose, Function};
+use crate::set::Set;
+use crate::tensor::{Physical, Tensor};
 
-/// Renders a boxed tensor. Every `Display` implementation below defers to this,
-/// and each is written for boxed tensors only.
-pub fn format_boxed<A: Display>(tensor: &dyn BoxedTensor<A>) -> String {
-    format_tensor(tensor.hrect().shape(), &|index| tensor.apply(index))
+/// Renders a tensor on a hrect.
+pub fn format_boxed<A: Display>(tensor: &dyn Tensor<A>) -> String {
+    format_tensor(tensor.domain().shape(), &|index| tensor.apply(index))
 }
 
 impl<A: Clone + Display> Display for Physical<A> {
@@ -21,15 +21,18 @@ impl<A: Clone + Display> Display for Physical<A> {
     }
 }
 
-// A composition is a boxed tensor when the function applied first is one on a
-// hrect and the one applied last gives values that print.
-impl<F: Function, G: Boxed + Function<Input = [usize]>> Display for Compose<F, G>
+// A composition prints when the function applied first is one on a hrect and the
+// one applied last gives values that print, multisets included.
+impl<F, G> Display for Compose<F, G>
 where
-    G::Output: Borrow<F::Input>,
-    F::Output: Display,
+    F: Function<Domain = G::Codomain>,
+    G: Function<Domain = HRect>,
+    <F::Codomain as Set>::Owned: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
+        f.write_str(&format_tensor(self.domain().shape(), &|index| {
+            self.apply(index)
+        }))
     }
 }
 

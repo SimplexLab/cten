@@ -5,60 +5,39 @@
 use std::borrow::Borrow;
 use std::rc::Rc;
 
-use crate::domain::{Domain, HRect};
-use crate::multiset::Multiset;
+use crate::set::{Multisets, Set, Values};
 
-/// A function from `Input` to `Output`. A tensor is a function from indices to
-/// values, an index map one from indices to indices, an index function one from
-/// indices to multisets of indices, and a reduction one from multisets of values
-/// to values.
+/// A function from its domain to its codomain, which may be sets of indices,
+/// of values, or of multisets of either. A tensor goes from indices to values,
+/// an index map from indices to indices, an index function from indices to
+/// multisets of indices, and a reduction from multisets of values to values.
 pub trait Function {
-    type Input: ?Sized;
-    type Output;
+    type Domain: Set;
+    type Codomain: Set;
 
-    fn apply(&self, x: &Self::Input) -> Self::Output;
+    fn apply(&self, x: &<Self::Domain as Set>::Element) -> <Self::Codomain as Set>::Owned;
 
-    /// For a function on indices, or on multisets of indices, the set those
-    /// indices are drawn from. A function on values has none.
-    fn domain(&self) -> Option<&dyn Domain> {
-        None
-    }
+    fn domain(&self) -> Self::Domain;
 
-    /// For a function to indices, or to multisets of indices, the set those
-    /// indices are drawn from. A function to values has none.
-    fn codomain(&self) -> Option<&dyn Domain> {
-        None
-    }
-}
-
-/// A function whose domain is a hrect. Only these can be printed, since
-/// formatting walks a shape and visits every index of it.
-pub trait Boxed: Function {
-    fn hrect(&self) -> &HRect;
+    fn codomain(&self) -> Self::Codomain;
 }
 
 // A shared function is the same function, so that one can be used in several
 // compositions, or have its type erased as an `Rc<dyn Tensor<A>>`.
 impl<T: Function + ?Sized> Function for Rc<T> {
-    type Input = T::Input;
-    type Output = T::Output;
+    type Domain = T::Domain;
+    type Codomain = T::Codomain;
 
-    fn apply(&self, x: &Self::Input) -> Self::Output {
+    fn apply(&self, x: &<Self::Domain as Set>::Element) -> <Self::Codomain as Set>::Owned {
         (**self).apply(x)
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
+    fn domain(&self) -> Self::Domain {
         (**self).domain()
     }
 
-    fn codomain(&self) -> Option<&dyn Domain> {
+    fn codomain(&self) -> Self::Codomain {
         (**self).codomain()
-    }
-}
-
-impl<T: Boxed + ?Sized> Boxed for Rc<T> {
-    fn hrect(&self) -> &HRect {
-        (**self).hrect()
     }
 }
 
@@ -69,88 +48,70 @@ pub struct Compose<F, G> {
 }
 
 /// Composes `f` after `g`. Composing a tensor after an index map re-indexes it,
-/// and a function on values after a tensor applies it element-wise. Where both
-/// sides are on indices, the indices `g` lands on must be those `f` takes, which
-/// is checked here as far as it can be without enumerating a domain.
-pub fn compose<F: Function, G: Function>(f: F, g: G) -> Compose<F, G>
+/// and a function on values after a tensor applies it element-wise. The
+/// codomain of `g` must lie in the domain of `f`.
+pub fn compose<F, G>(f: F, g: G) -> Compose<F, G>
 where
-    G::Output: Borrow<F::Input>,
+    F: Function<Domain = G::Codomain>,
+    G: Function,
 {
-    if let (Some(codomain), Some(domain)) = (g.codomain(), f.domain()) {
-        assert_eq!(
-            codomain.ndim(),
-            domain.ndim(),
-            "the inner function lands on {}-dimensional indices, but the outer one is indexed by {} coordinates",
-            codomain.ndim(),
-            domain.ndim()
-        );
-    }
+    let (codomain, domain) = (g.codomain(), f.domain());
+    assert!(
+        codomain.lies_in(&domain),
+        "the inner function lands in {codomain:?}, which does not lie in the domain {domain:?} of the outer one"
+    );
     Compose { f, g }
 }
 
-impl<F: Function, G: Function> Function for Compose<F, G>
+impl<F, G> Function for Compose<F, G>
 where
-    G::Output: Borrow<F::Input>,
+    F: Function<Domain = G::Codomain>,
+    G: Function,
 {
-    type Input = G::Input;
-    type Output = F::Output;
+    type Domain = G::Domain;
+    type Codomain = F::Codomain;
 
-    fn apply(&self, x: &Self::Input) -> Self::Output {
+    fn apply(&self, x: &<Self::Domain as Set>::Element) -> <Self::Codomain as Set>::Owned {
         self.f.apply(self.g.apply(x).borrow())
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
+    fn domain(&self) -> Self::Domain {
         self.g.domain()
     }
 
-    fn codomain(&self) -> Option<&dyn Domain> {
+    fn codomain(&self) -> Self::Codomain {
         self.f.codomain()
     }
 }
 
-impl<F: Function, G: Boxed> Boxed for Compose<F, G>
-where
-    G::Output: Borrow<F::Input>,
-{
-    fn hrect(&self) -> &HRect {
-        self.g.hrect()
-    }
-}
-
-/// The extension of `f` to multisets, written `f̄` in the paper: it maps a
-/// multiset to the multiset of the images of its elements, repeats included.
-pub struct MultisetLift<F> {
+/// A function from multisets to multisets: the extension of `f` to multisets,
+/// written `f̄` in the paper. It maps a multiset to the multiset of the images
+/// of its elements, repeats included, so it goes from the multisets of the
+/// domain of `f` to those of its codomain.
+pub struct MultiFunction<F> {
     f: F,
 }
 
-pub fn multiset_lift<F: Function>(f: F) -> MultisetLift<F>
-where
-    F::Input: ToOwned,
-{
-    MultisetLift { f }
+pub fn multiset_lift<F: Function>(f: F) -> MultiFunction<F> {
+    MultiFunction { f }
 }
 
-// The elements are taken owned, so that a tensor, which takes `[usize]`, lifts to
-// take the `Multiset<Vec<usize>>` an index function returns.
-impl<F: Function> Function for MultisetLift<F>
-where
-    F::Input: ToOwned,
-{
-    type Input = Multiset<<F::Input as ToOwned>::Owned>;
-    type Output = Multiset<F::Output>;
+impl<F: Function> Function for MultiFunction<F> {
+    type Domain = Multisets<F::Domain>;
+    type Codomain = Multisets<F::Codomain>;
 
-    fn apply(&self, x: &Self::Input) -> Self::Output {
+    fn apply(&self, x: &<Self::Domain as Set>::Element) -> <Self::Codomain as Set>::Owned {
         x.iter()
             .map(|element| self.f.apply(element.borrow()))
             .collect()
     }
 
-    fn domain(&self) -> Option<&dyn Domain> {
-        self.f.domain()
+    fn domain(&self) -> Self::Domain {
+        Multisets::new(self.f.domain())
     }
 
-    fn codomain(&self) -> Option<&dyn Domain> {
-        self.f.codomain()
+    fn codomain(&self) -> Self::Codomain {
+        Multisets::new(self.f.codomain())
     }
 }
 
@@ -169,10 +130,18 @@ impl<A, B> ValueFunction<A, B> {
 }
 
 impl<A: Clone, B> Function for ValueFunction<A, B> {
-    type Input = A;
-    type Output = B;
+    type Domain = Values<A>;
+    type Codomain = Values<B>;
 
     fn apply(&self, x: &A) -> B {
         (self.f)(x.clone())
+    }
+
+    fn domain(&self) -> Values<A> {
+        Values::new()
+    }
+
+    fn codomain(&self) -> Values<B> {
+        Values::new()
     }
 }
