@@ -1,18 +1,20 @@
 use std::rc::Rc;
 
 use cten::{
-    BoxedTensor, COO, Domain, HRect, LeftComposition, Physical, RightComposition, Stride, Sum,
-    Tensor, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute,
-    prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
-    unsqueeze, where_, zeros,
+    Boxed, BoxedTensor, COO, Compose, Domain, Function, HRect, Physical, Stride, Sum, Tensor,
+    ValueFunction, clamp, compose, concatenate, diagonalize, eye, eye_rect, mm, movedim,
+    multiset_lift, negate, ones, permute, prod, scale, sparse_coo_tensor, sparse_latticed_tensor,
+    square, squeeze, stack, sum, transpose, unsqueeze, where_, zeros,
 };
+
+type Strided<A = f32> = Compose<Rc<Physical<A>>, Rc<Stride>>;
 
 fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
 }
 
-fn strided() -> Rc<RightComposition<Stride>> {
-    Rc::new(RightComposition::new(
+fn strided() -> Rc<Strided> {
+    Rc::new(compose(
         physical(),
         Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     ))
@@ -20,37 +22,37 @@ fn strided() -> Rc<RightComposition<Stride>> {
 
 /// A rank-three tensor whose values are all distinct, so a permutation of its
 /// axes is checkable: `[i, j, k]` holds `12i + 4j + k`.
-fn cube() -> Rc<RightComposition<Stride>> {
+fn cube() -> Rc<Strided> {
     let values: Vec<f32> = (0..24).map(|value| value as f32).collect();
-    Rc::new(RightComposition::new(
+    Rc::new(compose(
         Rc::new(Physical::new(values)),
         Rc::new(Stride::new(HRect::new(vec![2, 3, 4]), vec![12, 4, 1])),
     ))
 }
 
 /// A row-major matrix over stored `values`.
-fn matrix(rows: usize, cols: usize, values: Vec<f32>) -> Rc<RightComposition<Stride>> {
-    Rc::new(RightComposition::new(
+fn matrix(rows: usize, cols: usize, values: Vec<f32>) -> Rc<Strided> {
+    Rc::new(compose(
         Rc::new(Physical::new(values)),
         Rc::new(Stride::new(HRect::new(vec![rows, cols]), vec![cols, 1])),
     ))
 }
 
 /// A row-major matrix over stored integers.
-fn int_matrix(rows: usize, cols: usize, values: Vec<i64>) -> Rc<RightComposition<Stride, i64>> {
-    Rc::new(RightComposition::new(
+fn int_matrix(rows: usize, cols: usize, values: Vec<i64>) -> Rc<Strided<i64>> {
+    Rc::new(compose(
         Rc::new(Physical::new(values)),
         Rc::new(Stride::new(HRect::new(vec![rows, cols]), vec![cols, 1])),
     ))
 }
 
 fn collect_1d<A>(tensor: &dyn Tensor<A>, len: usize) -> Vec<A> {
-    (0..len).map(|i| tensor.get(&[i])).collect()
+    (0..len).map(|i| tensor.apply(&[i])).collect()
 }
 
 fn collect_2d<A>(tensor: &dyn Tensor<A>, rows: usize, cols: usize) -> Vec<Vec<A>> {
     (0..rows)
-        .map(|i| (0..cols).map(|j| tensor.get(&[i, j])).collect())
+        .map(|i| (0..cols).map(|j| tensor.apply(&[i, j])).collect())
         .collect()
 }
 
@@ -61,8 +63,8 @@ fn square_and_negate_transform_values() {
 
     for i in 0..6 {
         let value = (i + 1) as f32;
-        assert_eq!(squared.get(&[i]), value * value);
-        assert_eq!(negated.get(&[i]), -value);
+        assert_eq!(squared.apply(&[i]), value * value);
+        assert_eq!(negated.apply(&[i]), -value);
     }
 }
 
@@ -72,7 +74,7 @@ fn elementwise_functions_compose() {
 
     for i in 0..6 {
         let value = (i + 1) as f32;
-        assert_eq!(squared_negative.get(&[i]), value * value);
+        assert_eq!(squared_negative.apply(&[i]), value * value);
     }
 }
 
@@ -84,13 +86,13 @@ fn parameterised_transforms_remember_their_argument() {
 
     for i in 0..6 {
         let value = (i + 1) as f32;
-        assert_eq!(doubled.get(&[i]), value * 2.0);
+        assert_eq!(doubled.apply(&[i]), value * 2.0);
     }
 
     // [1, 2, 3, 4, 5, 6] held between 2 and 4.
     let expected = [2.0, 2.0, 3.0, 4.0, 4.0, 4.0];
     for (i, expected) in expected.iter().enumerate() {
-        assert_eq!(bounded.get(&[i]), *expected);
+        assert_eq!(bounded.apply(&[i]), *expected);
     }
 }
 
@@ -99,7 +101,7 @@ fn parameterised_transforms_compose() {
     let scaled_twice = scale(Rc::new(scale(physical(), 2.0)), 3.0);
 
     for i in 0..6 {
-        assert_eq!(scaled_twice.get(&[i]), (i + 1) as f32 * 6.0);
+        assert_eq!(scaled_twice.apply(&[i]), (i + 1) as f32 * 6.0);
     }
 }
 
@@ -109,8 +111,8 @@ fn several_transforms_of_one_tensor_keep_their_own_arguments() {
     let doubled = scale(shared.clone(), 2.0);
     let tripled = scale(shared, 3.0);
 
-    assert_eq!(doubled.get(&[0]), 2.0);
-    assert_eq!(tripled.get(&[0]), 3.0);
+    assert_eq!(doubled.apply(&[0]), 2.0);
+    assert_eq!(tripled.apply(&[0]), 3.0);
 }
 
 #[test]
@@ -158,7 +160,7 @@ fn permute_reorders_axes() {
     for a in 0..4 {
         for b in 0..2 {
             for c in 0..3 {
-                assert_eq!(permuted.get(&[a, b, c]), cube.get(&[b, c, a]));
+                assert_eq!(permuted.apply(&[a, b, c]), cube.apply(&[b, c, a]));
             }
         }
     }
@@ -185,7 +187,7 @@ fn transpose_leaves_leading_axes_alone() {
     for i in 0..2 {
         for j in 0..4 {
             for k in 0..3 {
-                assert_eq!(transposed.get(&[i, j, k]), cube.get(&[i, k, j]));
+                assert_eq!(transposed.apply(&[i, j, k]), cube.apply(&[i, k, j]));
             }
         }
     }
@@ -204,23 +206,26 @@ fn transpose_is_an_involution() {
 // that have no strides to permute in the first place.
 #[test]
 fn transpose_applies_to_a_tensor_with_no_strides() {
-    let sparse = Rc::new(Sum::new(
-        Rc::new(Physical::new(vec![1.0, 2.0])),
-        Rc::new(COO::new(
-            HRect::new(vec![2, 3]),
-            vec![vec![0, 1], vec![1, 2]],
-        )),
+    let sparse = Rc::new(compose(
+        Sum::new(),
+        compose(
+            multiset_lift(Rc::new(Physical::new(vec![1.0, 2.0]))),
+            Rc::new(COO::new(
+                HRect::new(vec![2, 3]),
+                vec![vec![0, 1], vec![1, 2]],
+            )),
+        ),
     ));
     let transposed = transpose(sparse.clone());
 
     assert_eq!(transposed.hrect().shape(), &[3, 2]);
-    assert_eq!(transposed.get(&[1, 0]), 1.0);
-    assert_eq!(transposed.get(&[2, 1]), 2.0);
-    assert_eq!(transposed.get(&[0, 0]), 0.0);
+    assert_eq!(transposed.apply(&[1, 0]), 1.0);
+    assert_eq!(transposed.apply(&[2, 1]), 2.0);
+    assert_eq!(transposed.apply(&[0, 0]), 0.0);
 
     for a in 0..3 {
         for b in 0..2 {
-            assert_eq!(transposed.get(&[a, b]), sparse.get(&[b, a]));
+            assert_eq!(transposed.apply(&[a, b]), sparse.apply(&[b, a]));
         }
     }
 }
@@ -236,7 +241,7 @@ fn movedim_follows_the_pytorch_convention() {
     for a in 0..3 {
         for b in 0..4 {
             for c in 0..2 {
-                assert_eq!(moved.get(&[a, b, c]), cube.get(&[c, a, b]));
+                assert_eq!(moved.apply(&[a, b, c]), cube.apply(&[c, a, b]));
             }
         }
     }
@@ -251,7 +256,7 @@ fn movedim_is_reversible() {
     for i in 0..2 {
         for j in 0..3 {
             for k in 0..4 {
-                assert_eq!(restored.get(&[i, j, k]), cube.get(&[i, j, k]));
+                assert_eq!(restored.apply(&[i, j, k]), cube.apply(&[i, j, k]));
             }
         }
     }
@@ -265,7 +270,7 @@ fn diagonalize_builds_a_diagonal_matrix() {
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { (i + 1) as f32 } else { 0.0 };
-            assert_eq!(diagonal.get(&[i, j]), expected);
+            assert_eq!(diagonal.apply(&[i, j]), expected);
         }
     }
 }
@@ -275,16 +280,16 @@ fn diagonalize_generalises_to_higher_rank() {
     let diagonal = diagonalize(physical(), 3);
 
     assert_eq!(diagonal.hrect().shape(), &[6, 6, 6]);
-    assert_eq!(diagonal.get(&[2, 2, 2]), 3.0);
-    assert_eq!(diagonal.get(&[2, 2, 1]), 0.0);
-    assert_eq!(diagonal.get(&[0, 1, 2]), 0.0);
-    assert_eq!(diagonal.get(&[5, 5, 5]), 6.0);
+    assert_eq!(diagonal.apply(&[2, 2, 2]), 3.0);
+    assert_eq!(diagonal.apply(&[2, 2, 1]), 0.0);
+    assert_eq!(diagonal.apply(&[0, 1, 2]), 0.0);
+    assert_eq!(diagonal.apply(&[5, 5, 5]), 6.0);
 }
 
 #[test]
 fn zeros_and_ones_are_constant_at_any_rank() {
-    assert_eq!(zeros(vec![4]).get(&[3]), 0.0);
-    assert_eq!(ones(vec![4]).get(&[3]), 1.0);
+    assert_eq!(zeros(vec![4]).apply(&[3]), 0.0);
+    assert_eq!(ones(vec![4]).apply(&[3]), 1.0);
 
     let flat_zeros = zeros(vec![2, 3]);
     let flat_ones = ones(vec![2, 3]);
@@ -292,8 +297,8 @@ fn zeros_and_ones_are_constant_at_any_rank() {
     assert_eq!(collect_2d(&flat_zeros, 2, 3), vec![vec![0.0; 3]; 2]);
     assert_eq!(collect_2d(&flat_ones, 2, 3), vec![vec![1.0; 3]; 2]);
 
-    assert_eq!(ones(vec![2, 3, 4]).get(&[1, 2, 3]), 1.0);
-    assert_eq!(zeros(vec![2, 3, 4]).get(&[1, 2, 3]), 0.0);
+    assert_eq!(ones(vec![2, 3, 4]).apply(&[1, 2, 3]), 1.0);
+    assert_eq!(zeros(vec![2, 3, 4]).apply(&[1, 2, 3]), 0.0);
 }
 
 // A hrect of no dimensions holds the single empty index, so a constant over it is
@@ -303,8 +308,8 @@ fn a_rank_zero_constant_is_a_scalar() {
     let one = ones(vec![]);
 
     assert_eq!(one.hrect().ndim(), 0);
-    assert_eq!(one.get(&[]), 1.0);
-    assert_eq!(zeros(vec![]).get(&[]), 0.0);
+    assert_eq!(one.apply(&[]), 1.0);
+    assert_eq!(zeros(vec![]).apply(&[]), 0.0);
 }
 
 #[test]
@@ -315,7 +320,7 @@ fn eye_is_the_identity() {
     for i in 0..6 {
         for j in 0..6 {
             let expected = if i == j { 1.0 } else { 0.0 };
-            assert_eq!(identity.get(&[i, j]), expected);
+            assert_eq!(identity.apply(&[i, j]), expected);
         }
     }
 }
@@ -350,7 +355,7 @@ fn eye_survives_a_transpose() {
 
     for i in 0..4 {
         for j in 0..4 {
-            assert_eq!(transposed.get(&[i, j]), identity.get(&[i, j]));
+            assert_eq!(transposed.apply(&[i, j]), identity.apply(&[i, j]));
         }
     }
 }
@@ -391,7 +396,7 @@ fn unsqueeze_then_squeeze_gives_the_tensor_back() {
     let unsqueezed = Rc::new(unsqueeze(original.clone(), 1));
 
     assert_eq!(unsqueezed.hrect().shape(), &[3, 1, 2]);
-    assert_eq!(unsqueezed.get(&[2, 0, 1]), original.get(&[2, 1]));
+    assert_eq!(unsqueezed.apply(&[2, 0, 1]), original.apply(&[2, 1]));
 
     let squeezed = squeeze(unsqueezed, ());
     assert_eq!(squeezed.hrect().shape(), &[3, 2]);
@@ -414,12 +419,12 @@ fn unsqueeze_can_add_an_axis_before_the_first_or_after_the_last() {
 fn squeeze_with_no_dims_drops_every_axis_of_extent_one() {
     let squeezed = squeeze(Rc::new(ones(vec![1, 3, 1, 2])), ());
     assert_eq!(squeezed.hrect().shape(), &[3, 2]);
-    assert_eq!(squeezed.get(&[2, 1]), 1.0);
+    assert_eq!(squeezed.apply(&[2, 1]), 1.0);
 
     // When every axis has extent one, what is left is a scalar.
     let scalar = squeeze(Rc::new(ones(vec![1, 1])), ());
     assert_eq!(scalar.hrect().ndim(), 0);
-    assert_eq!(scalar.get(&[]), 1.0);
+    assert_eq!(scalar.apply(&[]), 1.0);
 }
 
 #[test]
@@ -548,10 +553,10 @@ fn stack_adds_a_new_axis_at_any_position() {
     for (t, part) in parts.iter().enumerate() {
         for i in 0..3 {
             for j in 0..2 {
-                let expected = part.get(&[i, j]);
-                assert_eq!(first.get(&[t, i, j]), expected);
-                assert_eq!(middle.get(&[i, t, j]), expected);
-                assert_eq!(last.get(&[i, j, t]), expected);
+                let expected = part.apply(&[i, j]);
+                assert_eq!(first.apply(&[t, i, j]), expected);
+                assert_eq!(middle.apply(&[i, t, j]), expected);
+                assert_eq!(last.apply(&[i, j, t]), expected);
             }
         }
     }
@@ -577,7 +582,7 @@ fn where_reads_input_where_the_condition_holds_and_other_elsewhere() {
 // A comparison turns a float tensor into a boolean one, to use as a condition.
 #[test]
 fn where_can_take_its_condition_from_a_comparison() {
-    let above_three = Rc::new(LeftComposition::new(physical(), |x: f32| x > 3.0));
+    let above_three = Rc::new(compose(ValueFunction::new(|x: f32| x > 3.0), physical()));
     let picked = where_(above_three, physical(), Rc::new(zeros(vec![6])));
 
     assert_eq!(collect_1d(&picked, 6), vec![0.0, 0.0, 0.0, 4.0, 5.0, 6.0]);
@@ -588,7 +593,10 @@ fn where_can_take_its_condition_from_a_comparison() {
 #[test]
 fn where_can_take_its_condition_from_a_tensor_with_no_data() {
     let m = matrix(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
-    let diagonal = Rc::new(LeftComposition::new(Rc::new(eye(2)), |x: f32| x != 0.0));
+    let diagonal = Rc::new(compose(
+        ValueFunction::new(|x: f32| x != 0.0),
+        Rc::new(eye(2)),
+    ));
     let picked = where_(diagonal, m.clone(), Rc::new(negate(m)));
 
     assert_eq!(
@@ -627,19 +635,22 @@ fn sparse_coo_tensor_matches_the_torch_documentation() {
 // the coordinates given one row per dimension instead of one per value.
 #[test]
 fn sparse_coo_tensor_is_the_demo_sparse_tensor() {
-    let by_hand = Sum::new(
-        physical(),
-        Rc::new(COO::new(
-            HRect::new(vec![6, 5]),
-            vec![
-                vec![0, 0],
-                vec![0, 3],
-                vec![4, 2],
-                vec![5, 4],
-                vec![1, 3],
-                vec![2, 0],
-            ],
-        )),
+    let by_hand = compose(
+        Sum::new(),
+        compose(
+            multiset_lift(physical()),
+            Rc::new(COO::new(
+                HRect::new(vec![6, 5]),
+                vec![
+                    vec![0, 0],
+                    vec![0, 3],
+                    vec![4, 2],
+                    vec![5, 4],
+                    vec![1, 3],
+                    vec![2, 0],
+                ],
+            )),
+        ),
     );
     let built = sparse_coo_tensor(
         vec![vec![0, 0, 4, 5, 1, 2], vec![0, 3, 2, 4, 3, 0]],
@@ -729,7 +740,7 @@ fn sparse_latticed_tensor_lays_out_an_anti_diagonal() {
 fn sparse_latticed_tensor_lays_out_a_block_diagonal() {
     // Three 2 by 2 blocks holding 1 to 12, block after block, row by row.
     let values: Vec<f32> = (1..=12).map(|value| value as f32).collect();
-    let blocks = Rc::new(RightComposition::new(
+    let blocks = Rc::new(compose(
         Rc::new(Physical::new(values)),
         Rc::new(Stride::new(HRect::new(vec![3, 2, 2]), vec![4, 2, 1])),
     ));
@@ -776,7 +787,7 @@ fn sparse_latticed_tensor_pads_with_its_offset_and_shape() {
 // stride, as torch's `expand` does, so it still holds only three values.
 #[test]
 fn sparse_latticed_tensor_lays_out_a_circulant_matrix() {
-    let kernel = Rc::new(RightComposition::new(
+    let kernel = Rc::new(compose(
         Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
         Rc::new(Stride::new(HRect::new(vec![4, 3]), vec![0, 1])),
     ));
@@ -798,7 +809,7 @@ fn sparse_latticed_tensor_lays_out_a_circulant_matrix() {
 // by zero strides, and the basis puts the two copies side by side on each row.
 #[test]
 fn sparse_latticed_tensor_repeats_a_vector_without_copying_it() {
-    let expanded = Rc::new(RightComposition::new(
+    let expanded = Rc::new(compose(
         Rc::new(Physical::new(vec![1.0, 2.0, 3.0])),
         Rc::new(Stride::new(HRect::new(vec![4, 2, 3]), vec![0, 0, 1])),
     ));
@@ -855,9 +866,9 @@ fn index_functions_work_on_integer_tensors() {
         vec![vec![1, 4], vec![2, 5], vec![3, 6]]
     );
     assert_eq!(joined.hrect().shape(), &[4, 3]);
-    assert_eq!(joined.get(&[3, 2]), 6);
+    assert_eq!(joined.apply(&[3, 2]), 6);
     assert_eq!(stacked.hrect().shape(), &[2, 2, 3]);
-    assert_eq!(stacked.get(&[1, 1, 0]), 4);
+    assert_eq!(stacked.apply(&[1, 1, 0]), 4);
 }
 
 #[test]
@@ -879,8 +890,8 @@ fn sum_and_prod_reduce_integer_and_double_tensors() {
 
     assert_eq!(collect_1d(&sum(ints.clone(), 0), 3), vec![5, 7, 9]);
     assert_eq!(collect_1d(&prod(ints, 1), 2), vec![6, 120]);
-    assert_eq!(sum(doubles.clone(), 0).get(&[]), 2.75);
-    assert_eq!(prod(doubles, 0).get(&[]), 0.25);
+    assert_eq!(sum(doubles.clone(), 0).apply(&[]), 2.75);
+    assert_eq!(prod(doubles, 0).apply(&[]), 0.25);
 }
 
 #[test]

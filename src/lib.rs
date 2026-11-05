@@ -3,6 +3,7 @@
 
 pub mod display;
 pub mod domain;
+pub mod function;
 pub mod functions;
 mod lattice;
 pub mod mapping;
@@ -10,22 +11,21 @@ pub mod multiset;
 pub mod signature;
 pub mod tensor;
 
-pub use display::{BoxedTensor, format_boxed};
+pub use display::format_boxed;
 pub use domain::{Domain, HRect, JaggedDomain};
+pub use function::{Boxed, Compose, Function, MultisetLift, ValueFunction, compose, multiset_lift};
 pub use functions::{
     Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, prod,
     scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
     unsqueeze, where_, zeros,
 };
 pub use mapping::{
-    Affine, BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
-    InvAffine, InvProjection, Permutation, PowersetMapping, Projection, Squeeze, Stride, Unsqueeze,
-    Where,
+    Affine, COO, Concat, Diagonal, EmptyMapping, InvAffine, InvProjection, Mapping, Permutation,
+    Projection, Squeeze, Stride, Unsqueeze, Where,
 };
 pub use multiset::Multiset;
 pub use signature::{HRectSignature, Signature};
 pub use tensor::{
-    Bar, BarComposition, Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product,
-    ProductReduction, Reduction, ReductionTensor, RightComposition, Sum, SumReduction, Sup,
-    SupReduction, Tensor,
+    BoxedTensor, Inf, InfReduction, JaggedTensor, Physical, Product, ProductReduction, Reduce,
+    Reduction, ReductionTensor, Sum, SumReduction, Sup, SupReduction, Tensor,
 };

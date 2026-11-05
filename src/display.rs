@@ -2,25 +2,17 @@
 //! implementations live here rather than next to each tensor, since they all
 //! render the same way, by walking a shape.
 
+use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Display, Write as _};
 
-use crate::domain::HRect;
-use crate::mapping::{BoxedMapping, BoxedPowersetMapping};
-use crate::tensor::{
-    BarComposition, LeftComposition, Physical, Reduction, ReductionTensor, RightComposition, Tensor,
-};
-
-/// A tensor whose domain is a hrect. Only these can be printed, since formatting
-/// walks a shape and visits every index of it.
-pub trait BoxedTensor<A = f32>: Tensor<A> {
-    fn hrect(&self) -> &HRect;
-}
+use crate::function::{Boxed, Compose, Function};
+use crate::tensor::{BoxedTensor, Physical};
 
 /// Renders a boxed tensor. Every `Display` implementation below defers to this,
-/// and each is written for the boxed instantiation of its tensor only.
+/// and each is written for boxed tensors only.
 pub fn format_boxed<A: Display>(tensor: &dyn BoxedTensor<A>) -> String {
-    format_tensor(tensor.hrect().shape(), &|index| tensor.get(index))
+    format_tensor(tensor.hrect().shape(), &|index| tensor.apply(index))
 }
 
 impl<A: Clone + Display> Display for Physical<A> {
@@ -29,26 +21,12 @@ impl<A: Clone + Display> Display for Physical<A> {
     }
 }
 
-impl<M: BoxedMapping + ?Sized, A: Display> Display for RightComposition<M, A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
-impl<U: BoxedTensor<A> + ?Sized, A, B: Display> Display for LeftComposition<U, A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
-impl<M: BoxedPowersetMapping + ?Sized, A: Display> Display for BarComposition<M, A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
-impl<R: Reduction<A>, M: BoxedPowersetMapping + ?Sized, A: Display> Display
-    for ReductionTensor<R, M, A>
+// A composition is a boxed tensor when the function applied first is one on a
+// hrect and the one applied last gives values that print.
+impl<F: Function, G: Boxed + Function<Input = [usize]>> Display for Compose<F, G>
+where
+    G::Output: Borrow<F::Input>,
+    F::Output: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))

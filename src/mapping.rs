@@ -1,99 +1,44 @@
 use std::rc::Rc;
 
-use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
+use crate::function::{Boxed, Function};
 use crate::lattice::Preimage;
 use crate::multiset::Multiset;
 use crate::signature::{HRectSignature, Signature};
+use crate::tensor::BoxedTensor;
 
-/// A mapping between two index sets, from its domain to its codomain.
-pub trait IndexMapping {
-    fn map(&self, index: &[usize]) -> Vec<usize>;
-
-    fn domain(&self) -> &dyn Domain;
-
-    fn codomain(&self) -> &dyn Domain;
-}
-
-/// A mapping whose domain is a hrect. Composing a tensor over one of these gives
-/// a boxed tensor, hence a printable one.
-pub trait BoxedMapping: IndexMapping {
-    fn hrect(&self) -> &HRect;
-}
-
-/// A mapping sending each index of its domain to a multiset of indices of its
-/// codomain, an index function in the paper's terms. Note that the codomain is
-/// the set the returned indices are drawn from, not its multisets.
-pub trait PowersetMapping {
-    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>>;
-
-    fn domain(&self) -> &dyn Domain;
-
-    fn codomain(&self) -> &dyn Domain;
-}
-
-/// A powerset mapping whose domain is a hrect. Reducing over one of these gives a
-/// boxed tensor, hence a printable one.
-pub trait BoxedPowersetMapping: PowersetMapping {
-    fn hrect(&self) -> &HRect;
-}
-
-/// What a mapping from a hyperrectangle has to provide. Implementing this rather
-/// than `IndexMapping` gets the domain accessors and printability below for
-/// free, whatever the codomain; a mapping over a domain that is not a hrect
-/// implements `IndexMapping` directly instead, and is not printable.
-pub trait HRectMapping {
+/// A function on the indices of a hrect: an index map when `Output` is an index
+/// of its codomain, and an index function when it is a multiset of them. The
+/// codomain is the set those indices are drawn from. Implementing this gets
+/// `Function` and `Boxed` for free, with the domain and codomain of the
+/// signature.
+pub trait Mapping {
+    type Output;
     type Codomain: Domain;
 
-    fn map(&self, index: &[usize]) -> Vec<usize>;
+    fn map(&self, index: &[usize]) -> Self::Output;
 
     fn signature(&self) -> &Signature<HRect, Self::Codomain>;
 }
 
-impl<M: HRectMapping> IndexMapping for M {
-    fn map(&self, index: &[usize]) -> Vec<usize> {
-        HRectMapping::map(self, index)
+impl<M: Mapping> Function for M {
+    type Input = [usize];
+    type Output = M::Output;
+
+    fn apply(&self, index: &[usize]) -> M::Output {
+        self.map(index)
     }
 
-    fn domain(&self) -> &dyn Domain {
-        self.signature().domain()
+    fn domain(&self) -> Option<&dyn Domain> {
+        Some(self.signature().domain())
     }
 
-    fn codomain(&self) -> &dyn Domain {
-        self.signature().codomain()
-    }
-}
-
-impl<M: HRectMapping> BoxedMapping for M {
-    fn hrect(&self) -> &HRect {
-        self.signature().domain()
+    fn codomain(&self) -> Option<&dyn Domain> {
+        Some(self.signature().codomain())
     }
 }
 
-/// The powerset counterpart of `HRectMapping`.
-pub trait HRectPowersetMapping {
-    type Codomain: Domain;
-
-    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>>;
-
-    fn signature(&self) -> &Signature<HRect, Self::Codomain>;
-}
-
-impl<M: HRectPowersetMapping> PowersetMapping for M {
-    fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
-        HRectPowersetMapping::map(self, index)
-    }
-
-    fn domain(&self) -> &dyn Domain {
-        self.signature().domain()
-    }
-
-    fn codomain(&self) -> &dyn Domain {
-        self.signature().codomain()
-    }
-}
-
-impl<M: HRectPowersetMapping> BoxedPowersetMapping for M {
+impl<M: Mapping> Boxed for M {
     fn hrect(&self) -> &HRect {
         self.signature().domain()
     }
@@ -135,7 +80,8 @@ fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
         .sum::<usize>()
 }
 
-impl HRectMapping for Stride {
+impl Mapping for Stride {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -185,7 +131,8 @@ impl Permutation {
     }
 }
 
-impl HRectMapping for Permutation {
+impl Mapping for Permutation {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -224,7 +171,8 @@ impl Unsqueeze {
     }
 }
 
-impl HRectMapping for Unsqueeze {
+impl Mapping for Unsqueeze {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -271,7 +219,8 @@ impl Squeeze {
     }
 }
 
-impl HRectMapping for Squeeze {
+impl Mapping for Squeeze {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -325,7 +274,8 @@ impl Concat {
     }
 }
 
-impl HRectMapping for Concat {
+impl Mapping for Concat {
+    type Output = Vec<usize>;
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -374,11 +324,12 @@ impl Where {
     }
 }
 
-impl HRectMapping for Where {
+impl Mapping for Where {
+    type Output = Vec<usize>;
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
-        let part = if self.condition.get(index) { 0 } else { 1 };
+        let part = if self.condition.apply(index) { 0 } else { 1 };
         let mut result = Vec::with_capacity(index.len() + 1);
         result.push(part);
         result.extend_from_slice(index);
@@ -402,7 +353,8 @@ impl EmptyMapping {
     }
 }
 
-impl HRectPowersetMapping for EmptyMapping {
+impl Mapping for EmptyMapping {
+    type Output = Multiset<Vec<usize>>;
     type Codomain = HRect;
 
     fn map(&self, _index: &[usize]) -> Multiset<Vec<usize>> {
@@ -433,7 +385,8 @@ impl COO {
     }
 }
 
-impl HRectPowersetMapping for COO {
+impl Mapping for COO {
+    type Output = Multiset<Vec<usize>>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -470,7 +423,8 @@ impl Diagonal {
     }
 }
 
-impl HRectPowersetMapping for Diagonal {
+impl Mapping for Diagonal {
+    type Output = Multiset<Vec<usize>>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -513,7 +467,8 @@ impl Projection {
     }
 }
 
-impl HRectMapping for Projection {
+impl Mapping for Projection {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -551,7 +506,8 @@ impl InvProjection {
     }
 }
 
-impl HRectPowersetMapping for InvProjection {
+impl Mapping for InvProjection {
+    type Output = Multiset<Vec<usize>>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -623,7 +579,8 @@ impl Affine {
     }
 }
 
-impl HRectMapping for Affine {
+impl Mapping for Affine {
+    type Output = Vec<usize>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -679,7 +636,8 @@ impl InvAffine {
     }
 }
 
-impl HRectPowersetMapping for InvAffine {
+impl Mapping for InvAffine {
+    type Output = Multiset<Vec<usize>>;
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {

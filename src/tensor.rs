@@ -1,33 +1,21 @@
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::display::BoxedTensor;
 use crate::domain::{Domain, HRect, JaggedDomain};
-use crate::mapping::{BoxedMapping, BoxedPowersetMapping, IndexMapping, PowersetMapping};
+use crate::function::{Boxed, Compose, Function, MultisetLift};
 use crate::multiset::Multiset;
 
-/// A mapping from an index set to a value set. The index set is the tensor's
-/// domain, and the value set is its value type `A`, `f32` unless said
-/// otherwise.
-pub trait Tensor<A = f32> {
-    fn get(&self, index: &[usize]) -> A;
+/// A function from indices to values, with values of type `A`, `f32` unless
+/// said otherwise. Nothing implements this directly: every function of that
+/// type is a tensor.
+pub trait Tensor<A = f32>: Function<Input = [usize], Output = A> {}
 
-    fn domain(&self) -> &dyn Domain;
-}
+impl<A, T: Function<Input = [usize], Output = A> + ?Sized> Tensor<A> for T {}
 
-/// Checks that a mapping lands on the indices the underlying tensor reads,
-/// which is all that can be checked without enumerating a domain. In
-/// particular, a mapping into flat positions needs a one-dimensional tensor
-/// under it.
-fn check_composable<A>(codomain: &dyn Domain, u: &dyn Tensor<A>) {
-    assert_eq!(
-        codomain.ndim(),
-        u.domain().ndim(),
-        "the mapping lands on {}-dimensional indices, but the underlying tensor is indexed by {} coordinates",
-        codomain.ndim(),
-        u.domain().ndim()
-    );
-}
+/// A tensor whose domain is a hrect, hence a printable one.
+pub trait BoxedTensor<A = f32>: Tensor<A> + Boxed {}
+
+impl<A, T: Tensor<A> + Boxed + ?Sized> BoxedTensor<A> for T {}
 
 pub struct Physical<A = f32> {
     values: Vec<A>,
@@ -41,8 +29,11 @@ impl<A> Physical<A> {
     }
 }
 
-impl<A: Clone> Tensor<A> for Physical<A> {
-    fn get(&self, index: &[usize]) -> A {
+impl<A: Clone> Function for Physical<A> {
+    type Input = [usize];
+    type Output = A;
+
+    fn apply(&self, index: &[usize]) -> A {
         assert_eq!(
             index.len(),
             1,
@@ -51,20 +42,20 @@ impl<A: Clone> Tensor<A> for Physical<A> {
         self.values[index[0]].clone()
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
+    fn domain(&self) -> Option<&dyn Domain> {
+        Some(&self.domain)
     }
 }
 
-impl<A: Clone> BoxedTensor<A> for Physical<A> {
+impl<A: Clone> Boxed for Physical<A> {
     fn hrect(&self) -> &HRect {
         &self.domain
     }
 }
 
 /// Several tensors read as one: `[t, rest..]` reads part `t` at `rest`. This is
-/// the underlying that concatenating, stacking and `where` remap into. Its domain
-/// is jagged rather than a hrect, so it is not printable.
+/// the paper's stack, which concatenating, stacking and `where` remap into. Its
+/// domain is jagged rather than a hrect, so it is not printable.
 pub struct JaggedTensor<A = f32> {
     parts: Vec<Rc<dyn BoxedTensor<A>>>,
     domain: JaggedDomain,
@@ -81,94 +72,23 @@ impl<A> JaggedTensor<A> {
     }
 }
 
-impl<A> Tensor<A> for JaggedTensor<A> {
-    fn get(&self, index: &[usize]) -> A {
-        self.parts[index[0]].get(&index[1..])
+impl<A> Function for JaggedTensor<A> {
+    type Input = [usize];
+    type Output = A;
+
+    fn apply(&self, index: &[usize]) -> A {
+        self.parts[index[0]].apply(&index[1..])
     }
 
-    fn domain(&self) -> &dyn Domain {
-        &self.domain
-    }
-}
-
-// The domain is the mapping's own domain, so it is never passed in. The mapping
-// type is a parameter rather than always `dyn IndexMapping` so that composing
-// over a boxed mapping is known to give a boxed, printable tensor. Pass
-// `dyn BoxedMapping` or `dyn IndexMapping` for it to erase the mapping. The
-// values are the underlying tensor's, read elsewhere.
-pub struct RightComposition<M: ?Sized, A = f32> {
-    u: Rc<dyn Tensor<A>>,
-    mapping: Rc<M>,
-}
-
-impl<M: IndexMapping + ?Sized, A> RightComposition<M, A> {
-    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
-        check_composable(mapping.codomain(), &*u);
-        Self { u, mapping }
+    fn domain(&self) -> Option<&dyn Domain> {
+        Some(&self.domain)
     }
 }
 
-impl<M: IndexMapping + ?Sized, A> Tensor<A> for RightComposition<M, A> {
-    fn get(&self, virtual_index: &[usize]) -> A {
-        let underlying_index = self.mapping.map(virtual_index);
-        self.u.get(&underlying_index)
-    }
-
-    fn domain(&self) -> &dyn Domain {
-        self.mapping.domain()
-    }
-}
-
-impl<M: BoxedMapping + ?Sized, A> BoxedTensor<A> for RightComposition<M, A> {
-    fn hrect(&self) -> &HRect {
-        self.mapping.hrect()
-    }
-}
-
-// Transforming the values leaves the index set alone, so the domain is the
-// underlying tensor's. Its type is a parameter so that a transform of a boxed
-// tensor is known to be boxed, and printable, in turn. The transform may change
-// the value type, from `A` to `B`, as a comparison turns numbers into booleans.
-pub struct LeftComposition<U: ?Sized, A = f32, B = A> {
-    u: Rc<U>,
-    // Held as a closure rather than a plain `fn` pointer so that a transform can
-    // carry values of its own, as `scale` and `clamp` do.
-    f: Rc<dyn Fn(A) -> B>,
-}
-
-impl<U: Tensor<A> + ?Sized, A, B> LeftComposition<U, A, B> {
-    pub fn new(u: Rc<U>, f: impl Fn(A) -> B + 'static) -> Self {
-        Self { u, f: Rc::new(f) }
-    }
-}
-
-impl<U: Tensor<A> + ?Sized, A, B> Tensor<B> for LeftComposition<U, A, B> {
-    fn get(&self, index: &[usize]) -> B {
-        (self.f)(self.u.get(index))
-    }
-
-    fn domain(&self) -> &dyn Domain {
-        self.u.domain()
-    }
-}
-
-impl<U: BoxedTensor<A> + ?Sized, A, B> BoxedTensor<B> for LeftComposition<U, A, B> {
-    fn hrect(&self) -> &HRect {
-        self.u.hrect()
-    }
-}
-
-/// A way of combining the values of a tensor of value type `A` into one.
+/// A way of combining values of type `A` into one, from a neutral element.
 pub trait Reduction<A> {
     const NEUTRAL: A;
     fn combine(a: A, b: A) -> A;
-
-    /// Reduces a multiset to a single value: the neutral element for the empty
-    /// multiset, its element for a multiset of one, and otherwise its elements
-    /// combined in any order, as `combine` is associative and commutative.
-    fn reduce(multiset: Multiset<A>) -> A {
-        multiset.into_iter().fold(Self::NEUTRAL, Self::combine)
-    }
 }
 
 pub struct SumReduction;
@@ -216,94 +136,45 @@ reductions! {
     i64: 0, 1, i64::MIN, i64::MAX;
 }
 
-/// The extension of a tensor `U` to multisets, written `Ū`: it maps a multiset of
-/// indices to the multiset of the values of `U` at them, repeats included. Its
-/// indices being multisets, it is not a tensor itself; composed with an index
-/// function, it gives one.
-pub struct Bar<A = f32> {
-    u: Rc<dyn Tensor<A>>,
+/// The reduction `R` as a function from multisets of values to values, `Ω` in
+/// the paper: the neutral element for the empty multiset, the element of a
+/// multiset of one, and otherwise its elements combined in any order, as
+/// `combine` is associative and commutative.
+pub struct Reduce<R, A = f32> {
+    _marker: PhantomData<fn() -> (R, A)>,
 }
 
-impl<A> Bar<A> {
-    pub fn new(u: Rc<dyn Tensor<A>>) -> Self {
-        Self { u }
-    }
-
-    pub fn get(&self, indices: &Multiset<Vec<usize>>) -> Multiset<A> {
-        indices.iter().map(|index| self.u.get(index)).collect()
-    }
-}
-
-// `Ū ∘ ψ`: at each index, the multiset of the values of `U` at the indices `ψ`
-// maps it to. This is the multiset-valued tensor a reduction reduces. As in a
-// right composition, the domain is the mapping's own domain, and the mapping
-// type is a parameter so that a boxed mapping is known to give a boxed,
-// printable tensor.
-pub struct BarComposition<M: ?Sized, A = f32> {
-    bar: Bar<A>,
-    mapping: Rc<M>,
-}
-
-impl<M: PowersetMapping + ?Sized, A> BarComposition<M, A> {
-    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
-        check_composable(mapping.codomain(), &*u);
+impl<R, A> Reduce<R, A> {
+    pub fn new() -> Self {
         Self {
-            bar: Bar::new(u),
-            mapping,
-        }
-    }
-}
-
-impl<M: PowersetMapping + ?Sized, A> Tensor<Multiset<A>> for BarComposition<M, A> {
-    fn get(&self, index: &[usize]) -> Multiset<A> {
-        self.bar.get(&self.mapping.map(index))
-    }
-
-    fn domain(&self) -> &dyn Domain {
-        self.mapping.domain()
-    }
-}
-
-impl<M: BoxedPowersetMapping + ?Sized, A> BoxedTensor<Multiset<A>> for BarComposition<M, A> {
-    fn hrect(&self) -> &HRect {
-        self.mapping.hrect()
-    }
-}
-
-// `Ω ∘ Ū ∘ ψ`: the reduction `R` of the multisets that a bar composition gathers.
-pub struct ReductionTensor<R, M: ?Sized, A = f32> {
-    gathered: BarComposition<M, A>,
-    _marker: PhantomData<fn() -> R>,
-}
-
-impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> ReductionTensor<R, M, A> {
-    pub fn new(u: Rc<dyn Tensor<A>>, mapping: Rc<M>) -> Self {
-        Self {
-            gathered: BarComposition::new(u, mapping),
             _marker: PhantomData,
         }
     }
 }
 
-impl<R: Reduction<A>, M: PowersetMapping + ?Sized, A> Tensor<A> for ReductionTensor<R, M, A> {
-    fn get(&self, index: &[usize]) -> A {
-        R::reduce(self.gathered.get(index))
-    }
-
-    fn domain(&self) -> &dyn Domain {
-        self.gathered.domain()
+// Written out rather than derived, which would require `R: Default` and `A: Default`.
+impl<R, A> Default for Reduce<R, A> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl<R: Reduction<A>, M: BoxedPowersetMapping + ?Sized, A> BoxedTensor<A>
-    for ReductionTensor<R, M, A>
-{
-    fn hrect(&self) -> &HRect {
-        self.gathered.hrect()
+impl<R: Reduction<A>, A: Clone> Function for Reduce<R, A> {
+    type Input = Multiset<A>;
+    type Output = A;
+
+    fn apply(&self, multiset: &Multiset<A>) -> A {
+        multiset.iter().cloned().fold(R::NEUTRAL, R::combine)
     }
 }
 
-pub type Sum<M, A = f32> = ReductionTensor<SumReduction, M, A>;
-pub type Product<M, A = f32> = ReductionTensor<ProductReduction, M, A>;
-pub type Sup<M, A = f32> = ReductionTensor<SupReduction, M, A>;
-pub type Inf<M, A = f32> = ReductionTensor<InfReduction, M, A>;
+pub type Sum<A = f32> = Reduce<SumReduction, A>;
+pub type Product<A = f32> = Reduce<ProductReduction, A>;
+pub type Sup<A = f32> = Reduce<SupReduction, A>;
+pub type Inf<A = f32> = Reduce<InfReduction, A>;
+
+/// `Ω ∘ Ū ∘ ψ`, the reduction tensor of the paper, with reduction `R`,
+/// underlying tensor `U` and index function `M`: at each index, the reduction
+/// of the multiset of the values of `U` at the indices `M` maps it to. Built
+/// as `compose(Sum::new(), compose(multiset_lift(u), psi))`.
+pub type ReductionTensor<R, U, M> = Compose<R, Compose<MultisetLift<U>, M>>;

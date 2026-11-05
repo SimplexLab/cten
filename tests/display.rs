@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    BarComposition, COO, Diagonal, HRect, Physical, RightComposition, Stride, Sum, Sup, Tensor,
-    format_boxed,
+    COO, Diagonal, Function, HRect, Physical, Stride, Sum, Sup, compose, format_boxed,
+    multiset_lift,
 };
 
 fn physical() -> Rc<Physical> {
@@ -27,10 +27,10 @@ fn tensors_of_other_value_types_print_the_same_way() {
 // its multisets of values are summed.
 #[test]
 fn a_multiset_valued_tensor_prints_its_multisets() {
-    let stored = Rc::new(Physical::new(vec![1.0, 2.0, 4.0]));
-    let diagonal = Rc::new(Diagonal::new(HRect::new(vec![3, 3])));
-    let before = BarComposition::new(stored.clone(), diagonal.clone());
-    let after = Sum::new(stored, diagonal);
+    let stored = Physical::new(vec![1.0, 2.0, 4.0]);
+    let diagonal = Diagonal::new(HRect::new(vec![3, 3]));
+    let before = Rc::new(compose(multiset_lift(stored), diagonal));
+    let after = compose(Sum::new(), before.clone());
 
     assert_eq!(
         before.to_string(),
@@ -44,7 +44,7 @@ fn a_multiset_valued_tensor_prints_its_multisets() {
 
 #[test]
 fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
-    let strided = RightComposition::new(
+    let strided = compose(
         physical(),
         Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     );
@@ -58,7 +58,7 @@ fn a_rank_two_tensor_prints_one_row_per_line_aligned_under_the_bracket() {
 #[test]
 fn values_are_right_aligned_to_a_common_width() {
     let wide = Rc::new(Physical::new(vec![1.0, 16.0, 4.0, 25.0]));
-    let strided = RightComposition::new(
+    let strided = compose(
         wide,
         Rc::new(Stride::new(HRect::new(vec![2, 2]), vec![1, 2])),
     );
@@ -72,7 +72,7 @@ fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
         HRect::new(vec![2, 2]),
         vec![vec![0, 0], vec![1, 1]],
     ));
-    let sup = Sup::new(physical(), coo);
+    let sup = compose(Sup::new(), compose(multiset_lift(physical()), coo));
 
     assert_eq!(
         sup.to_string(),
@@ -82,9 +82,12 @@ fn the_neutral_element_of_a_sup_prints_as_negative_infinity() {
 
 #[test]
 fn rank_three_tensors_separate_blocks_with_a_blank_line() {
-    let diag = Sum::new(
-        physical(),
-        Rc::new(Diagonal::new(HRect::new(vec![2, 2, 2]))),
+    let diag = compose(
+        Sum::new(),
+        compose(
+            multiset_lift(physical()),
+            Rc::new(Diagonal::new(HRect::new(vec![2, 2, 2]))),
+        ),
     );
 
     assert_eq!(
@@ -101,18 +104,21 @@ fn rank_three_tensors_separate_blocks_with_a_blank_line() {
 
 #[test]
 fn display_agrees_with_direct_lookups() {
-    let sparse = Sum::new(
-        physical(),
-        Rc::new(COO::new(
-            HRect::new(vec![2, 3]),
-            vec![vec![0, 0], vec![1, 2]],
-        )),
+    let sparse = compose(
+        Sum::new(),
+        compose(
+            multiset_lift(physical()),
+            Rc::new(COO::new(
+                HRect::new(vec![2, 3]),
+                vec![vec![0, 0], vec![1, 2]],
+            )),
+        ),
     );
 
     let rendered = sparse.to_string();
     for i in 0..2 {
         for j in 0..3 {
-            let value = sparse.get(&[i, j]);
+            let value = sparse.apply(&[i, j]);
             assert!(
                 rendered.contains(&value.to_string()),
                 "{rendered} is missing the value at ({i}, {j})"
@@ -123,7 +129,7 @@ fn display_agrees_with_direct_lookups() {
 
 #[test]
 fn boxed_tensors_print_through_their_hrect() {
-    let strided = RightComposition::new(
+    let strided = compose(
         physical(),
         Rc::new(Stride::new(HRect::new(vec![3, 2]), vec![1, 3])),
     );
