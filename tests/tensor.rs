@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use cten::{
-    COO, Compose, Diagonal, Domain, Function, HRect, InvProjection, JaggedTensor, Multiset,
+    COO, Composition, Diagonal, Function, HRect, IndexSet, InvProjection, JaggedTensor, Multiset,
     Multisets, Permutation, Physical, Stride, Sum, ValueFunction, Values, compose, multiset_lift,
 };
 
@@ -30,7 +30,7 @@ fn a_composition_takes_its_domain_from_the_function_applied_first() {
     assert_eq!(strided.domain().shape(), &[3, 2]);
     assert!(strided.domain().contains(&[2, 1]));
     assert!(!strided.domain().contains(&[2, 2]));
-    // The same storage under a mapping of another shape is another domain.
+    // The same storage under an index function of another shape is another domain.
     assert_eq!(transposed.domain().shape(), &[2, 3]);
     assert!(transposed.domain().contains(&[1, 2]));
 }
@@ -74,7 +74,7 @@ fn a_function_on_values_keeps_the_domain_of_the_tensor_it_follows() {
 // Composition is not only for tensors: permuting the axes of indices one way and
 // then back is the identity on indices.
 #[test]
-fn index_maps_compose_like_any_other_functions() {
+fn index_functions_compose_like_any_other_functions() {
     let forth = Permutation::new(HRect::new(vec![4, 2, 3]), vec![1, 2, 0]);
     let back = Permutation::new(HRect::new(vec![2, 3, 4]), vec![2, 0, 1]);
     let round_trip = compose(back, forth);
@@ -105,7 +105,7 @@ fn a_lifted_function_on_values_applies_to_each_element() {
 }
 
 /// The matrix of the paper's row sums example, `[[1, 2, 3], [0, 4, 1], [2, 2, 5]]`.
-fn figure_matrix() -> Rc<Compose<Physical, Stride>> {
+fn figure_matrix() -> Rc<Composition<Physical, Stride>> {
     Rc::new(compose(
         Physical::new(vec![1.0, 2.0, 3.0, 0.0, 4.0, 1.0, 2.0, 2.0, 5.0]),
         Stride::new(HRect::new(vec![3, 3]), vec![3, 1]),

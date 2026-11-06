@@ -5,7 +5,7 @@
 use std::borrow::Borrow;
 use std::rc::Rc;
 
-use crate::set::{Multisets, Set, Values};
+use crate::sets::{Multisets, Set, Values};
 
 /// A function from its domain to its codomain, which may be sets of indices,
 /// of values, or of multisets of either. A tensor goes from indices to values,
@@ -42,7 +42,7 @@ impl<T: Function + ?Sized> Function for Rc<T> {
 }
 
 /// `f ∘ g`: applies `g`, then `f` to the result.
-pub struct Compose<F, G> {
+pub struct Composition<F, G> {
     f: F,
     g: G,
 }
@@ -50,7 +50,7 @@ pub struct Compose<F, G> {
 /// Composes `f` after `g`. Composing a tensor after an index map re-indexes it,
 /// and a function on values after a tensor applies it element-wise. The
 /// codomain of `g` must lie in the domain of `f`.
-pub fn compose<F, G>(f: F, g: G) -> Compose<F, G>
+pub fn compose<F, G>(f: F, g: G) -> Composition<F, G>
 where
     F: Function<Domain = G::Codomain>,
     G: Function,
@@ -60,10 +60,10 @@ where
         codomain.lies_in(&domain),
         "the inner function lands in {codomain:?}, which does not lie in the domain {domain:?} of the outer one"
     );
-    Compose { f, g }
+    Composition { f, g }
 }
 
-impl<F, G> Function for Compose<F, G>
+impl<F, G> Function for Composition<F, G>
 where
     F: Function<Domain = G::Codomain>,
     G: Function,

@@ -1,40 +1,39 @@
 //! Named constructors for the compositions the library can already express.
-//! Everything here is assembled from `function`, `mapping` and `tensor`; none
-//! of it adds machinery of its own.
+//! Everything here is assembled from `function`, `index_functions`,
+//! `reductions` and `tensor`; none of it adds machinery of its own.
 
 use std::assert_eq;
 use std::fmt::Display;
 use std::ops::{Mul, Neg};
 use std::rc::Rc;
 
-use crate::domain::{Domain, HRect};
-use crate::function::{Compose, Function, ValueFunction, compose, multiset_lift};
-use crate::mapping::{
+use crate::function::{Composition, Function, ValueFunction, compose, multiset_lift};
+use crate::index_functions::{
     Affine, COO, Concat, Diagonal, EmptyMapping, InvAffine, InvProjection, Permutation, Projection,
     Squeeze, Unsqueeze, Where,
 };
-use crate::set::Values;
-use crate::tensor::{
-    JaggedTensor, Physical, Product, ProductReduction, Reduce, Reduction, ReductionTensor, Sum,
-    SumReduction, Tensor,
+use crate::reductions::{
+    Product, ProductReduction, Reduction, ReductionFunction, Sum, SumReduction,
 };
+use crate::sets::{HRect, IndexSet, Values};
+use crate::tensor::{JaggedTensor, Physical, ReductionTensor, Tensor};
 
 pub fn square<A: Mul<Output = A> + Copy + 'static, U: Function<Codomain = Values<A>>>(
     u: U,
-) -> Compose<ValueFunction<A>, U> {
+) -> Composition<ValueFunction<A>, U> {
     compose(ValueFunction::new(|x: A| x * x), u)
 }
 
 pub fn negate<A: Neg<Output = A> + Clone + 'static, U: Function<Codomain = Values<A>>>(
     u: U,
-) -> Compose<ValueFunction<A>, U> {
+) -> Composition<ValueFunction<A>, U> {
     compose(ValueFunction::new(|x: A| -x), u)
 }
 
 pub fn scale<A: Mul<Output = A> + Copy + 'static, U: Function<Codomain = Values<A>>>(
     u: U,
     factor: A,
-) -> Compose<ValueFunction<A>, U> {
+) -> Composition<ValueFunction<A>, U> {
     compose(ValueFunction::new(move |x: A| x * factor), u)
 }
 
@@ -45,7 +44,7 @@ pub fn clamp<A: PartialOrd + Copy + Display + 'static, U: Function<Codomain = Va
     u: U,
     low: A,
     high: A,
-) -> Compose<ValueFunction<A>, U> {
+) -> Composition<ValueFunction<A>, U> {
     assert!(low <= high, "clamp needs low <= high, got {low} and {high}");
     let clamped = ValueFunction::new(move |x: A| {
         if x < low {
@@ -61,7 +60,7 @@ pub fn clamp<A: PartialOrd + Copy + Display + 'static, U: Function<Codomain = Va
 
 /// Reorders the axes of a tensor: `axes[i]` is the axis of `u` that becomes
 /// axis `i` of the result.
-pub fn permute<A, U: Tensor<A>>(u: U, axes: Vec<usize>) -> Compose<U, Permutation> {
+pub fn permute<A, U: Tensor<A>>(u: U, axes: Vec<usize>) -> Composition<U, Permutation> {
     let codomain = u.domain();
     compose(u, Permutation::new(codomain, axes))
 }
@@ -69,7 +68,7 @@ pub fn permute<A, U: Tensor<A>>(u: U, axes: Vec<usize>) -> Compose<U, Permutatio
 /// Swaps the last two axes and leaves any leading ones alone, so a stack of
 /// matrices transposes matrix by matrix. At rank two this is the plain
 /// transpose.
-pub fn transpose<A, U: Tensor<A>>(u: U) -> Compose<U, Permutation> {
+pub fn transpose<A, U: Tensor<A>>(u: U) -> Composition<U, Permutation> {
     let ndim = u.domain().ndim();
     assert!(ndim >= 2, "transpose needs at least two dimensions");
     let mut axes: Vec<usize> = (0..ndim).collect();
@@ -83,7 +82,7 @@ pub fn movedim<A, U: Tensor<A>>(
     u: U,
     source: usize,
     destination: usize,
-) -> Compose<U, Permutation> {
+) -> Composition<U, Permutation> {
     let ndim = u.domain().ndim();
     assert!(source < ndim, "source axis {source} is out of range");
     assert!(
@@ -98,7 +97,7 @@ pub fn movedim<A, U: Tensor<A>>(
 
 /// Inserts an axis of extent 1 at `dim`, which can be anywhere from before the
 /// first axis to after the last.
-pub fn unsqueeze<A, U: Tensor<A>>(u: U, dim: usize) -> Compose<U, Unsqueeze> {
+pub fn unsqueeze<A, U: Tensor<A>>(u: U, dim: usize) -> Composition<U, Unsqueeze> {
     let codomain = u.domain();
     compose(u, Unsqueeze::new(codomain, dim))
 }
@@ -143,7 +142,7 @@ impl Dims for &[usize] {
 /// Drops axes of extent 1, as torch's `squeeze` does: `squeeze(u, ())` drops all
 /// of them, `squeeze(u, 1)` only axis 1, and `squeeze(u, [0, 2])` axes 0 and 2.
 /// A named axis whose extent isn't 1 is left alone.
-pub fn squeeze<A, U: Tensor<A>>(u: U, dims: impl Dims) -> Compose<U, Squeeze> {
+pub fn squeeze<A, U: Tensor<A>>(u: U, dims: impl Dims) -> Composition<U, Squeeze> {
     let codomain = u.domain();
     let ndim = codomain.shape().len();
     let named = dims.axes(ndim);
@@ -165,7 +164,7 @@ pub fn squeeze<A, U: Tensor<A>>(u: U, dims: impl Dims) -> Compose<U, Squeeze> {
 pub fn concatenate<A>(
     tensors: Vec<Rc<dyn Tensor<A>>>,
     dim: usize,
-) -> Compose<JaggedTensor<A>, Concat> {
+) -> Composition<JaggedTensor<A>, Concat> {
     assert!(!tensors.is_empty(), "concatenate needs at least one tensor");
     let underlying = JaggedTensor::new(tensors);
     let codomain = underlying.domain();
@@ -177,7 +176,7 @@ pub fn concatenate<A>(
 pub fn stack<A: 'static>(
     tensors: Vec<Rc<dyn Tensor<A>>>,
     dim: usize,
-) -> Compose<JaggedTensor<A>, Concat> {
+) -> Composition<JaggedTensor<A>, Concat> {
     assert!(!tensors.is_empty(), "stack needs at least one tensor");
     let shape = tensors[0].domain();
     assert!(
@@ -200,7 +199,7 @@ pub fn where_<A>(
     condition: Rc<dyn Tensor<bool>>,
     input: Rc<dyn Tensor<A>>,
     other: Rc<dyn Tensor<A>>,
-) -> Compose<JaggedTensor<A>, Where> {
+) -> Composition<JaggedTensor<A>, Where> {
     let underlying = JaggedTensor::new(vec![input, other]);
     let codomain = underlying.domain();
     compose(underlying, Where::new(codomain, condition))
@@ -227,11 +226,11 @@ where
 /// index, so a constant tensor needs no underlying data at all.
 fn neutral<R: Reduction<f32>>(
     shape: Vec<usize>,
-) -> ReductionTensor<Reduce<R>, Physical, EmptyMapping> {
-    let mapping = EmptyMapping::new(HRect::new(shape), HRect::new(vec![0]));
+) -> ReductionTensor<ReductionFunction<R>, Physical, EmptyMapping> {
+    let empty = EmptyMapping::new(HRect::new(shape), HRect::new(vec![0]));
     compose(
-        Reduce::new(),
-        compose(multiset_lift(Physical::new(vec![])), mapping),
+        ReductionFunction::new(),
+        compose(multiset_lift(Physical::new(vec![])), empty),
     )
 }
 
@@ -353,7 +352,7 @@ where
 
 /// The tensors `mm` multiplies and then sums, stacked: the product of the two
 /// matrices at each `[m, n, p]`.
-type Products<A> = ReductionTensor<Product<A>, Compose<JaggedTensor<A>, Concat>, InvProjection>;
+type Products<A> = ReductionTensor<Product<A>, Composition<JaggedTensor<A>, Concat>, InvProjection>;
 
 pub fn mm<A: Clone + 'static, U: Tensor<A> + 'static, V: Tensor<A> + 'static>(
     mat1: U,

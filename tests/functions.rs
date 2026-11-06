@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
 use cten::{
-    COO, Compose, Domain, Function, HRect, Physical, Stride, Sum, Tensor, ValueFunction, clamp,
-    compose, concatenate, diagonalize, eye, eye_rect, mm, movedim, multiset_lift, negate, ones,
-    permute, prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum,
-    transpose, unsqueeze, where_, zeros,
+    COO, Composition, Function, HRect, IndexSet, Physical, Stride, Sum, Tensor, ValueFunction,
+    clamp, compose, concatenate, diagonalize, eye, eye_rect, mm, movedim, multiset_lift, negate,
+    ones, permute, prod, scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack,
+    sum, transpose, unsqueeze, where_, zeros,
 };
 
-type Strided<A = f32> = Compose<Rc<Physical<A>>, Rc<Stride>>;
+type Strided<A = f32> = Composition<Rc<Physical<A>>, Rc<Stride>>;
 
 fn physical() -> Rc<Physical> {
     Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
@@ -202,7 +202,7 @@ fn transpose_is_an_involution() {
     assert_eq!(collect_2d(&restored, 3, 2), collect_2d(&*original, 3, 2));
 }
 
-// The mapping permutes indices rather than strides, so it applies to tensors
+// The index function permutes indices rather than strides, so it applies to tensors
 // that have no strides to permute in the first place.
 #[test]
 fn transpose_applies_to_a_tensor_with_no_strides() {

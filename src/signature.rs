@@ -1,9 +1,9 @@
-//! The domain and codomain a mapping runs between.
+//! The domain and codomain an index function runs between.
 
-use crate::domain::HRect;
-use crate::set::Set;
+use crate::sets::HRect;
+use crate::sets::Set;
 
-/// The domain and codomain a mapping runs between.
+/// The domain and codomain an index function runs between.
 pub struct Signature<D: Set, C: Set> {
     domain: D,
     codomain: C,
@@ -23,5 +23,5 @@ impl<D: Set, C: Set> Signature<D, C> {
     }
 }
 
-/// The signature of a mapping between two hyperrectangles.
+/// The signature of an index function between two hyperrectangles.
 pub type HRectSignature = Signature<HRect, HRect>;

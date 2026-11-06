@@ -1,10 +1,10 @@
-//! The sets functions go between: indices, values, and multisets of either.
+//! The sets functions go between: sets of indices, sets of values, and sets of
+//! multisets of either.
 
 use std::borrow::Borrow;
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::multiset::Multiset;
 
 /// A set that functions go between. A function takes an element of its domain
@@ -18,6 +18,45 @@ pub trait Set: Clone + fmt::Debug {
     fn lies_in(&self, other: &Self) -> bool;
 }
 
+/// A set of indices, an index being a vector of coordinates. Tensors go from
+/// one, and index functions from one to another or to its multisets.
+pub trait IndexSet {
+    /// Number of coordinates the indices of this set have.
+    fn ndim(&self) -> usize;
+
+    fn contains(&self, index: &[usize]) -> bool;
+}
+
+/// A hyperrectangle of indices: coordinate `i` runs over `0..shape[i]`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct HRect {
+    shape: Vec<usize>,
+}
+
+impl HRect {
+    pub fn new(shape: Vec<usize>) -> Self {
+        Self { shape }
+    }
+
+    pub fn shape(&self) -> &[usize] {
+        &self.shape
+    }
+}
+
+impl IndexSet for HRect {
+    fn ndim(&self) -> usize {
+        self.shape.len()
+    }
+
+    fn contains(&self, index: &[usize]) -> bool {
+        index.len() == self.shape.len()
+            && index
+                .iter()
+                .zip(&self.shape)
+                .all(|(coord, extent)| coord < extent)
+    }
+}
+
 impl Set for HRect {
     type Element = [usize];
     type Owned = Vec<usize>;
@@ -29,6 +68,43 @@ impl Set for HRect {
                 .iter()
                 .zip(other.shape())
                 .all(|(extent, other)| extent <= other)
+    }
+}
+
+/// The disjoint union of several hrects: `[t, rest..]` belongs to it when `rest`
+/// is in hrect `t`. This is the domain of a jagged tensor, whose parts may have
+/// different shapes.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct JaggedDomain {
+    parts: Vec<HRect>,
+}
+
+impl JaggedDomain {
+    pub fn new(parts: Vec<HRect>) -> Self {
+        assert!(!parts.is_empty(), "a jagged domain needs at least one part");
+        let ndim = parts[0].ndim();
+        assert!(
+            parts.iter().all(|part| part.ndim() == ndim),
+            "the parts of a jagged domain must all have the same number of coordinates"
+        );
+        Self { parts }
+    }
+
+    pub fn parts(&self) -> &[HRect] {
+        &self.parts
+    }
+}
+
+impl IndexSet for JaggedDomain {
+    fn ndim(&self) -> usize {
+        1 + self.parts[0].ndim()
+    }
+
+    fn contains(&self, index: &[usize]) -> bool {
+        match index.split_first() {
+            Some((&part, rest)) => part < self.parts.len() && self.parts[part].contains(rest),
+            None => false,
+        }
     }
 }
 

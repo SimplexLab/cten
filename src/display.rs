@@ -5,9 +5,9 @@
 use std::fmt;
 use std::fmt::{Display, Write as _};
 
-use crate::domain::HRect;
-use crate::function::{Compose, Function};
-use crate::set::Set;
+use crate::function::{Composition, Function};
+use crate::sets::HRect;
+use crate::sets::Set;
 use crate::tensor::{Physical, Tensor};
 
 /// Renders a tensor on a hrect.
@@ -23,7 +23,7 @@ impl<A: Clone + Display> Display for Physical<A> {
 
 // A composition prints when the function applied first is one on a hrect and the
 // one applied last gives values that print, multisets included.
-impl<F, G> Display for Compose<F, G>
+impl<F, G> Display for Composition<F, G>
 where
     F: Function<Domain = G::Codomain>,
     G: Function<Domain = HRect>,

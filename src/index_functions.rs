@@ -1,22 +1,21 @@
 use std::rc::Rc;
 
-use crate::domain::{Domain, HRect, JaggedDomain};
 use crate::function::Function;
 use crate::lattice::Preimage;
 use crate::multiset::Multiset;
-use crate::set::{Multisets, Set};
+use crate::sets::{HRect, IndexSet, JaggedDomain, Multisets, Set};
 use crate::signature::{HRectSignature, Signature};
 use crate::tensor::Tensor;
 
-/// The signature of an index function: from a hrect to the multisets of
+/// The signature of a multi-index function: from a hrect to the multisets of
 /// indices of another.
-pub type IndexFunctionSignature = Signature<HRect, Multisets<HRect>>;
+pub type MultiIndexFunctionSignature = Signature<HRect, Multisets<HRect>>;
 
-/// A function on the indices of a hrect: an index map when its codomain is a
-/// set of indices, and an index function when it is the multisets of one.
+/// A function on the indices of a hrect, sending each index to an index of its
+/// codomain, or, for a multi-index function, to a multiset of them.
 /// Implementing this gets `Function` for free, with the domain and codomain of
 /// the signature.
-pub trait Mapping {
+pub trait IndexFunction {
     type Codomain: Set;
 
     fn map(&self, index: &[usize]) -> <Self::Codomain as Set>::Owned;
@@ -24,7 +23,7 @@ pub trait Mapping {
     fn signature(&self) -> &Signature<HRect, Self::Codomain>;
 }
 
-impl<M: Mapping> Function for M {
+impl<M: IndexFunction> Function for M {
     type Domain = HRect;
     type Codomain = M::Codomain;
 
@@ -77,7 +76,7 @@ fn flat_extent(shape: &[usize], strides: &[usize]) -> usize {
         .sum::<usize>()
 }
 
-impl Mapping for Stride {
+impl IndexFunction for Stride {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -100,7 +99,7 @@ pub struct Permutation {
 
 impl Permutation {
     /// Takes the codomain and derives the domain, the other way round from the
-    /// mappings above: the shape being permuted is what is known, and the
+    /// index functions above: the shape being permuted is what is known, and the
     /// permuted shape follows from it. `axes[i]` is the axis of the codomain
     /// that becomes axis `i` of the domain.
     pub fn new(codomain: HRect, axes: Vec<usize>) -> Self {
@@ -127,7 +126,7 @@ impl Permutation {
     }
 }
 
-impl Mapping for Permutation {
+impl IndexFunction for Permutation {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -166,7 +165,7 @@ impl Unsqueeze {
     }
 }
 
-impl Mapping for Unsqueeze {
+impl IndexFunction for Unsqueeze {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -213,7 +212,7 @@ impl Squeeze {
     }
 }
 
-impl Mapping for Squeeze {
+impl IndexFunction for Squeeze {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -267,7 +266,7 @@ impl Concat {
     }
 }
 
-impl Mapping for Concat {
+impl IndexFunction for Concat {
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -288,7 +287,7 @@ impl Mapping for Concat {
 }
 
 /// Reads the first of two tensors where `condition` holds and the second where
-/// it does not. Unlike the mappings above, where an index is sent depends on a
+/// it does not. Unlike the index functions above, where an index is sent depends on a
 /// tensor's values and not only on the index itself.
 pub struct Where {
     signature: Signature<HRect, JaggedDomain>,
@@ -316,7 +315,7 @@ impl Where {
     }
 }
 
-impl Mapping for Where {
+impl IndexFunction for Where {
     type Codomain = JaggedDomain;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -333,31 +332,31 @@ impl Mapping for Where {
 }
 
 pub struct EmptyMapping {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
 }
 
 impl EmptyMapping {
     pub fn new(domain: HRect, codomain: HRect) -> Self {
         Self {
-            signature: IndexFunctionSignature::new(domain, Multisets::new(codomain)),
+            signature: MultiIndexFunctionSignature::new(domain, Multisets::new(codomain)),
         }
     }
 }
 
-impl Mapping for EmptyMapping {
+impl IndexFunction for EmptyMapping {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, _index: &[usize]) -> Multiset<Vec<usize>> {
         Multiset::default()
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }
 
 pub struct COO {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
     inverse_coords: Vec<Vec<usize>>,
 }
 
@@ -365,7 +364,7 @@ impl COO {
     pub fn new(domain: HRect, inverse_coords: Vec<Vec<usize>>) -> Self {
         let codomain = HRect::new(vec![inverse_coords.len()]);
         Self {
-            signature: IndexFunctionSignature::new(domain, Multisets::new(codomain)),
+            signature: MultiIndexFunctionSignature::new(domain, Multisets::new(codomain)),
             inverse_coords,
         }
     }
@@ -375,7 +374,7 @@ impl COO {
     }
 }
 
-impl Mapping for COO {
+impl IndexFunction for COO {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -392,13 +391,13 @@ impl Mapping for COO {
         result
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }
 
 pub struct Diagonal {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
 }
 
 impl Diagonal {
@@ -407,7 +406,7 @@ impl Diagonal {
         // is as long as the shortest dimension.
         let extent = domain.shape().iter().copied().min().unwrap_or(0);
         Self {
-            signature: IndexFunctionSignature::new(
+            signature: MultiIndexFunctionSignature::new(
                 domain,
                 Multisets::new(HRect::new(vec![extent])),
             ),
@@ -415,7 +414,7 @@ impl Diagonal {
     }
 }
 
-impl Mapping for Diagonal {
+impl IndexFunction for Diagonal {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -430,7 +429,7 @@ impl Mapping for Diagonal {
         result
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }
@@ -458,7 +457,7 @@ impl Projection {
     }
 }
 
-impl Mapping for Projection {
+impl IndexFunction for Projection {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -475,7 +474,7 @@ impl Mapping for Projection {
 /// The inverse of the projection dropping axis `dim`.
 /// e.g. with dim=1, f(m, p) = {[m n p]^T | n in \[N\]}
 pub struct InvProjection {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
     dim: usize,
 }
 
@@ -490,13 +489,16 @@ impl InvProjection {
         let mut shape = codomain.shape().to_vec();
         shape.remove(dim);
         Self {
-            signature: IndexFunctionSignature::new(HRect::new(shape), Multisets::new(codomain)),
+            signature: MultiIndexFunctionSignature::new(
+                HRect::new(shape),
+                Multisets::new(codomain),
+            ),
             dim,
         }
     }
 }
 
-impl Mapping for InvProjection {
+impl IndexFunction for InvProjection {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -509,7 +511,7 @@ impl Mapping for InvProjection {
             .collect()
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }
@@ -568,7 +570,7 @@ impl Affine {
     }
 }
 
-impl Mapping for Affine {
+impl IndexFunction for Affine {
     type Codomain = HRect;
 
     fn map(&self, index: &[usize]) -> Vec<usize> {
@@ -600,7 +602,7 @@ impl Mapping for Affine {
 /// `basis·x = index - offset`, so a read costs about as much as the basis is
 /// large, however large the tensors.
 pub struct InvAffine {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
     offset: Vec<i64>,
     preimage: Preimage,
 }
@@ -614,7 +616,7 @@ impl InvAffine {
         } = affine;
         let preimage = Preimage::new(&basis, signature.domain().shape());
         Self {
-            signature: IndexFunctionSignature::new(
+            signature: MultiIndexFunctionSignature::new(
                 signature.codomain().clone(),
                 Multisets::new(signature.domain().clone()),
             ),
@@ -624,7 +626,7 @@ impl InvAffine {
     }
 }
 
-impl Mapping for InvAffine {
+impl IndexFunction for InvAffine {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
@@ -636,7 +638,7 @@ impl Mapping for InvAffine {
         self.preimage.solve(&target).into_iter().collect()
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }

@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use cten::{
-    Affine, COO, Diagonal, EmptyMapping, Function, HRect, IndexFunctionSignature, Inf, Mapping,
-    Multiset, Multisets, Physical, Product, Stride, Sum, Sup, Tensor, ValueFunction, compose,
-    multiset_lift,
+    Affine, COO, Diagonal, EmptyMapping, Function, HRect, IndexFunction, Inf,
+    MultiIndexFunctionSignature, Multiset, Multisets, Physical, Product, Stride, Sum, Sup, Tensor,
+    ValueFunction, compose, multiset_lift,
 };
 
 fn physical() -> Rc<Physical> {
@@ -76,7 +76,7 @@ fn a_zero_stride_broadcasts_along_its_axis() {
     }
 }
 
-// A mapping into flat positions needs a one-dimensional tensor under it. That
+// An index function into flat positions needs a one-dimensional tensor under it. That
 // used to be a matter of index types; it is now checked when composing.
 #[test]
 #[should_panic(expected = "does not lie in")]
@@ -106,7 +106,7 @@ fn left_composition_transforms_values_pointwise() {
     );
 }
 
-// A one-dimensional tensor is read by a mapping just like a physical one is:
+// A one-dimensional tensor is read by an index function just like a physical one is:
 // there is no longer a wrapper between the two.
 #[test]
 fn a_sparse_vector_can_be_read_through_a_mapping() {
@@ -341,17 +341,17 @@ fn an_affine_mapping_reads_a_lattice_out_of_a_tensor() {
 
 /// An index function sending each index to the multiset holding it twice.
 struct Twice {
-    signature: IndexFunctionSignature,
+    signature: MultiIndexFunctionSignature,
 }
 
-impl Mapping for Twice {
+impl IndexFunction for Twice {
     type Codomain = Multisets<HRect>;
 
     fn map(&self, index: &[usize]) -> Multiset<Vec<usize>> {
         Multiset::new(vec![index.to_vec(), index.to_vec()])
     }
 
-    fn signature(&self) -> &IndexFunctionSignature {
+    fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
 }
@@ -361,7 +361,7 @@ impl Mapping for Twice {
 #[test]
 fn a_reduction_counts_an_index_as_often_as_it_is_repeated() {
     let twice = Rc::new(Twice {
-        signature: IndexFunctionSignature::new(
+        signature: MultiIndexFunctionSignature::new(
             HRect::new(vec![6]),
             Multisets::new(HRect::new(vec![6])),
         ),
