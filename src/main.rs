@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cten::{
-    COO, HRect, Physical, Product, RightComposition, Stride, Sum, Sup, Tensor, diagonalize, eye,
-    movedim, negate, ones, square, transpose, zeros,
+    COO, Function, HRect, Physical, Product, Stride, Sum, Sup, compose, diagonalize, eye, movedim,
+    multiset_lift, negate, ones, square, transpose, zeros,
 };
 
 fn main() {
@@ -27,12 +27,16 @@ fn main() {
 
     // Tensors
     let physical = Rc::new(Physical::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-    let strided = Rc::new(RightComposition::new(physical.clone(), stride));
-    let sparse_coo_vector = Rc::new(Sum::new(physical.clone(), coo_vector));
-    let repeated_sparse = Rc::new(RightComposition::new(sparse_coo_vector.clone(), repeat));
-    let sparse_coo = Rc::new(Sum::new(physical.clone(), coo.clone()));
-    let prod_coo = Rc::new(Product::new(physical.clone(), coo.clone()));
-    let sup_coo = Rc::new(Sup::new(physical.clone(), coo));
+    let lifted = Rc::new(multiset_lift(physical.clone()));
+    let strided = Rc::new(compose(physical.clone(), stride));
+    let sparse_coo_vector = Rc::new(compose(Sum::new(), compose(lifted.clone(), coo_vector)));
+    let repeated_sparse = Rc::new(compose(sparse_coo_vector.clone(), repeat));
+    let sparse_coo = Rc::new(compose(Sum::new(), compose(lifted.clone(), coo.clone())));
+    let prod_coo = Rc::new(compose(
+        Product::new(),
+        compose(lifted.clone(), coo.clone()),
+    ));
+    let sup_coo = Rc::new(compose(Sup::new(), compose(lifted, coo)));
     let diag2d = Rc::new(diagonalize(physical.clone(), 2));
     let diag3d = Rc::new(diagonalize(physical.clone(), 3));
     let identity = Rc::new(eye(6));
@@ -64,7 +68,7 @@ fn main() {
         "strided({}, {}) = {}",
         index[0],
         index[1],
-        strided.get(&index)
+        strided.apply(&index)
     );
 
     println!("\ntransposed:\n{transposed}");

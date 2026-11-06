@@ -1,4 +1,4 @@
-use cten::{Domain, HRect, JaggedDomain};
+use cten::{HRect, IndexSet, JaggedDomain};
 
 #[test]
 fn a_hrect_holds_exactly_the_indices_within_its_shape() {

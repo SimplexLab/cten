@@ -2,27 +2,32 @@
 //! compositions or functional transforms.
 
 pub mod display;
-pub mod domain;
+pub mod function;
 pub mod functions;
+pub mod index_functions;
 mod lattice;
-pub mod mapping;
+pub mod multiset;
+pub mod reductions;
+pub mod sets;
 pub mod signature;
 pub mod tensor;
 
-pub use display::{BoxedTensor, format_boxed};
-pub use domain::{Domain, HRect, JaggedDomain};
+pub use display::format_boxed;
+pub use function::{Composition, Function, MultiFunction, ValueFunction, compose, multiset_lift};
 pub use functions::{
     Dims, clamp, concatenate, diagonalize, eye, eye_rect, mm, movedim, negate, ones, permute, prod,
     scale, sparse_coo_tensor, sparse_latticed_tensor, square, squeeze, stack, sum, transpose,
     unsqueeze, where_, zeros,
 };
-pub use mapping::{
-    Affine, BoxedMapping, BoxedPowersetMapping, COO, Concat, Diagonal, EmptyMapping, IndexMapping,
-    InvAffine, InvProjection, Permutation, Powerset, PowersetMapping, Projection, Squeeze, Stride,
-    Unsqueeze, Where,
+pub use index_functions::{
+    Affine, COO, Concat, Diagonal, EmptyMapping, IndexFunction, InvAffine, InvProjection,
+    MultiIndexFunctionSignature, Permutation, Projection, Squeeze, Stride, Unsqueeze, Where,
 };
+pub use multiset::Multiset;
+pub use reductions::{
+    Inf, InfReduction, Product, ProductReduction, Reduction, ReductionFunction, Sum, SumReduction,
+    Sup, SupReduction,
+};
+pub use sets::{HRect, IndexSet, JaggedDomain, Multisets, Set, Values};
 pub use signature::{HRectSignature, Signature};
-pub use tensor::{
-    Inf, InfReduction, JaggedTensor, LeftComposition, Physical, Product, ProductReduction,
-    Reduction, ReductionTensor, RightComposition, Sum, SumReduction, Sup, SupReduction, Tensor,
-};
+pub use tensor::{JaggedTensor, Physical, ReductionTensor, Tensor};

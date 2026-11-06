@@ -1,26 +1,18 @@
-//! Printing of boxed tensors: those whose domain is a hrect. The `Display`
-//! implementations live here rather than next to each tensor, since they all
-//! render the same way, by walking a shape.
+//! Printing of functions on a hrect: tensors, and multiset-valued tensors before
+//! a reduction. The `Display` implementations live here rather than next to
+//! each tensor, since they all render the same way, by walking a shape.
 
 use std::fmt;
 use std::fmt::{Display, Write as _};
 
-use crate::domain::HRect;
-use crate::mapping::{BoxedMapping, BoxedPowersetMapping};
-use crate::tensor::{
-    LeftComposition, Physical, Reduction, ReductionTensor, RightComposition, Tensor,
-};
+use crate::function::{Composition, Function};
+use crate::sets::HRect;
+use crate::sets::Set;
+use crate::tensor::{Physical, Tensor};
 
-/// A tensor whose domain is a hrect. Only these can be printed, since formatting
-/// walks a shape and visits every index of it.
-pub trait BoxedTensor<A = f32>: Tensor<A> {
-    fn hrect(&self) -> &HRect;
-}
-
-/// Renders a boxed tensor. Every `Display` implementation below defers to this,
-/// and each is written for the boxed instantiation of its tensor only.
-pub fn format_boxed<A: Display>(tensor: &dyn BoxedTensor<A>) -> String {
-    format_tensor(tensor.hrect().shape(), &|index| tensor.get(index))
+/// Renders a tensor on a hrect.
+pub fn format_boxed<A: Display>(tensor: &dyn Tensor<A>) -> String {
+    format_tensor(tensor.domain().shape(), &|index| tensor.apply(index))
 }
 
 impl<A: Clone + Display> Display for Physical<A> {
@@ -29,23 +21,18 @@ impl<A: Clone + Display> Display for Physical<A> {
     }
 }
 
-impl<M: BoxedMapping + ?Sized, A: Display> Display for RightComposition<M, A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
-impl<U: BoxedTensor<A> + ?Sized, A, B: Display> Display for LeftComposition<U, A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
-    }
-}
-
-impl<R: Reduction<A>, M: BoxedPowersetMapping + ?Sized, A: Display> Display
-    for ReductionTensor<R, M, A>
+// A composition prints when the function applied first is one on a hrect and the
+// one applied last gives values that print, multisets included.
+impl<F, G> Display for Composition<F, G>
+where
+    F: Function<Domain = G::Codomain>,
+    G: Function<Domain = HRect>,
+    <F::Codomain as Set>::Owned: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format_boxed(self))
+        f.write_str(&format_tensor(self.domain().shape(), &|index| {
+            self.apply(index)
+        }))
     }
 }
 
