@@ -8,6 +8,7 @@ pub mod index_functions;
 mod lattice;
 pub mod multiset;
 pub mod reductions;
+pub mod rewrite;
 pub mod sets;
 pub mod signature;
 pub mod tensor;
@@ -21,13 +22,15 @@ pub use functions::{
 };
 pub use index_functions::{
     Affine, COO, Concat, Diagonal, EmptyMapping, IndexFunction, InvAffine, InvProjection,
-    MultiIndexFunctionSignature, Permutation, Projection, Squeeze, Stride, Unsqueeze, Where,
+    MultiIndexFunctionSignature, Permutation, Projection, Sparsity, Squeeze, Stride, Unsqueeze,
+    Where,
 };
 pub use multiset::Multiset;
 pub use reductions::{
     Inf, InfReduction, Product, ProductReduction, Reduction, ReductionFunction, Sum, SumReduction,
     Sup, SupReduction,
 };
+pub use rewrite::{Rewrite, rewrite};
 pub use sets::{HRect, IndexSet, JaggedDomain, Multisets, Set, Values};
 pub use signature::{HRectSignature, Signature};
 pub use tensor::{JaggedTensor, Physical, ReductionTensor, Tensor};
