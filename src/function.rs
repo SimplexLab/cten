@@ -43,8 +43,8 @@ impl<T: Function + ?Sized> Function for Rc<T> {
 
 /// `f ∘ g`: applies `g`, then `f` to the result.
 pub struct Composition<F, G> {
-    f: F,
-    g: G,
+    pub(crate) f: F,
+    pub(crate) g: G,
 }
 
 /// Composes `f` after `g`. Composing a tensor after an index map re-indexes it,
@@ -89,7 +89,7 @@ where
 /// of its elements, repeats included, so it goes from the multisets of the
 /// domain of `f` to those of its codomain.
 pub struct MultiFunction<F> {
-    f: F,
+    pub(crate) f: F,
 }
 
 pub fn multiset_lift<F: Function>(f: F) -> MultiFunction<F> {

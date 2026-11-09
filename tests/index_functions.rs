@@ -2,8 +2,8 @@ use std::{assert_eq, collections::HashMap, rc::Rc};
 
 use cten::{
     Affine, COO, Concat, Diagonal, EmptyMapping, HRect, IndexFunction, IndexSet, InvAffine,
-    InvProjection, JaggedDomain, Multiset, Permutation, Physical, Projection, Squeeze, Stride,
-    Unsqueeze, Where,
+    InvProjection, JaggedDomain, Multiset, Permutation, Physical, Projection, Sparsity, Squeeze,
+    Stride, Unsqueeze, Where,
 };
 
 /// The indices of a multiset in sorted order, to compare multisets whose
@@ -406,4 +406,47 @@ fn a_where_sends_each_index_to_the_part_its_condition_picks() {
     assert_eq!(picks.map(&[0]), vec![0, 0]);
     assert_eq!(picks.map(&[1]), vec![1, 1]);
     assert_eq!(picks.map(&[2]), vec![0, 2]);
+}
+
+// A partial coordinate matches every index sharing its prefix, so it meets every
+// coordinate it is a prefix of.
+#[test]
+fn a_coo_is_sparse_when_no_two_coordinates_meet() {
+    let coo = |coords: Vec<Vec<usize>>| COO::new(HRect::new(vec![3, 3]), coords);
+
+    assert!(coo(vec![vec![0, 2], vec![1, 0], vec![1, 2]]).is_sparse());
+    assert!(!coo(vec![vec![1, 2], vec![0, 0], vec![1, 2]]).is_sparse());
+    assert!(!coo(vec![vec![2], vec![2, 1]]).is_sparse());
+    assert!(coo(vec![vec![2], vec![1, 1]]).is_sparse());
+}
+
+#[test]
+fn diagonal_and_empty_index_functions_are_sparse() {
+    assert!(Diagonal::new(HRect::new(vec![3, 3])).is_sparse());
+    assert!(EmptyMapping::new(HRect::new(vec![3]), HRect::new(vec![0])).is_sparse());
+}
+
+#[test]
+fn an_inv_projection_is_sparse_only_along_an_axis_of_extent_one() {
+    assert!(InvProjection::new(HRect::new(vec![2, 1]), 1).is_sparse());
+    assert!(!InvProjection::new(HRect::new(vec![2, 3]), 1).is_sparse());
+}
+
+#[test]
+fn an_inv_affine_is_sparse_when_its_affine_map_is_one_to_one() {
+    let diagonal = InvAffine::new(Affine::new(
+        HRect::new(vec![3]),
+        vec![vec![1], vec![1]],
+        vec![0, 0],
+        HRect::new(vec![3, 3]),
+    ));
+    let projection = InvAffine::new(Affine::new(
+        HRect::new(vec![2, 3, 4]),
+        vec![vec![1, 0, 0], vec![0, 0, 1]],
+        vec![0, 0],
+        HRect::new(vec![2, 4]),
+    ));
+
+    assert!(diagonal.is_sparse());
+    assert!(!projection.is_sparse());
 }
