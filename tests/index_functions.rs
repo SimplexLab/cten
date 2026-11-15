@@ -2,8 +2,8 @@ use std::{assert_eq, collections::HashMap, rc::Rc};
 
 use cten::{
     Affine, COO, Concat, Diagonal, EmptyMapping, HRect, IndexFunction, IndexSet, InvAffine,
-    InvProjection, JaggedDomain, Multiset, Permutation, Physical, Projection, Sparsity, Squeeze,
-    Stride, Unsqueeze, Where,
+    InvProjection, JaggedDomain, Multiset, Permutation, Physical, Projection, Squeeze, Stride,
+    Unsqueeze, Where,
 };
 
 /// The indices of a multiset in sorted order, to compare multisets whose

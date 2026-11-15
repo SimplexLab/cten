@@ -21,6 +21,13 @@ pub trait IndexFunction {
     fn map(&self, index: &[usize]) -> <Self::Codomain as Set>::Owned;
 
     fn signature(&self) -> &Signature<HRect, Self::Codomain>;
+
+    /// Whether this sends each index to at most one index, which makes a sum
+    /// over it a sparse tensor (Definition 4 of the paper). The answer may be a
+    /// conservative `false`, never a wrong `true`.
+    fn is_sparse(&self) -> bool {
+        false
+    }
 }
 
 impl<M: IndexFunction> Function for M {
@@ -37,6 +44,10 @@ impl<M: IndexFunction> Function for M {
 
     fn codomain(&self) -> M::Codomain {
         self.signature().codomain().clone()
+    }
+
+    fn returns_at_most_one(&self) -> bool {
+        self.is_sparse()
     }
 }
 
@@ -331,28 +342,8 @@ impl IndexFunction for Where {
     }
 }
 
-/// Whether a multi-index function sends each index to at most one index, which
-/// makes a sum over it a sparse tensor (Definition 4 of the paper). The answer
-/// may be a conservative `false`, never a wrong `true`.
-pub trait Sparsity {
-    fn is_sparse(&self) -> bool;
-}
-
-impl<T: Sparsity + ?Sized> Sparsity for Rc<T> {
-    fn is_sparse(&self) -> bool {
-        (**self).is_sparse()
-    }
-}
-
 pub struct EmptyMapping {
     signature: MultiIndexFunctionSignature,
-}
-
-// Every index is sent to no index at all.
-impl Sparsity for EmptyMapping {
-    fn is_sparse(&self) -> bool {
-        true
-    }
 }
 
 impl EmptyMapping {
@@ -372,6 +363,11 @@ impl IndexFunction for EmptyMapping {
 
     fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
+    }
+
+    // Every index is sent to no index at all.
+    fn is_sparse(&self) -> bool {
+        true
     }
 }
 
@@ -394,18 +390,6 @@ impl COO {
     }
 }
 
-// A partial coordinate matches every index sharing its prefix, so two stored
-// coordinates land on a common index when one is a prefix of the other, equal
-// ones included. Sorted, the coordinates starting with a given one come right
-// after it, so only neighbours need comparing.
-impl Sparsity for COO {
-    fn is_sparse(&self) -> bool {
-        let mut coords: Vec<&Vec<usize>> = self.inverse_coords.iter().collect();
-        coords.sort();
-        coords.windows(2).all(|pair| !pair[1].starts_with(pair[0]))
-    }
-}
-
 impl IndexFunction for COO {
     type Codomain = Multisets<HRect>;
 
@@ -425,6 +409,16 @@ impl IndexFunction for COO {
 
     fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
+    }
+
+    // A partial coordinate matches every index sharing its prefix, so two stored
+    // coordinates land on a common index when one is a prefix of the other, equal
+    // ones included. Sorted, the coordinates starting with a given one come right
+    // after it, so only neighbours need comparing.
+    fn is_sparse(&self) -> bool {
+        let mut coords: Vec<&Vec<usize>> = self.inverse_coords.iter().collect();
+        coords.sort();
+        coords.windows(2).all(|pair| !pair[1].starts_with(pair[0]))
     }
 }
 
@@ -464,10 +458,8 @@ impl IndexFunction for Diagonal {
     fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
-}
 
-// An index on the diagonal is sent to one index, and any other to none.
-impl Sparsity for Diagonal {
+    // An index on the diagonal is sent to one index, and any other to none.
     fn is_sparse(&self) -> bool {
         true
     }
@@ -553,10 +545,8 @@ impl IndexFunction for InvProjection {
     fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
-}
 
-// Each index is sent to the whole line along `dim`.
-impl Sparsity for InvProjection {
+    // Each index is sent to the whole line along `dim`.
     fn is_sparse(&self) -> bool {
         self.signature.codomain().set().shape()[self.dim] <= 1
     }
@@ -687,11 +677,9 @@ impl IndexFunction for InvAffine {
     fn signature(&self) -> &MultiIndexFunctionSignature {
         &self.signature
     }
-}
 
-// Each index is sent to its preimage under the affine map, which holds at most
-// one index when the map is one-to-one.
-impl Sparsity for InvAffine {
+    // Each index is sent to its preimage under the affine map, which holds at most
+    // one index when the map is one-to-one.
     fn is_sparse(&self) -> bool {
         self.preimage.is_injective()
     }

@@ -1,8 +1,10 @@
 //! Reductions: functions from multisets of values to values, `Ω` in the paper.
 
+use std::any::Any;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
-use crate::function::Function;
+use crate::function::{Function, multiset_lift};
 use crate::multiset::Multiset;
 use crate::sets::{Multisets, Values};
 
@@ -80,7 +82,9 @@ impl<R, A> Default for ReductionFunction<R, A> {
     }
 }
 
-impl<R: Reduction<A>, A: Clone> Function for ReductionFunction<R, A> {
+impl<R: Reduction<A> + 'static, A: Clone + PartialEq + 'static> Function
+    for ReductionFunction<R, A>
+{
     type Domain = Multisets<Values<A>>;
     type Codomain = Values<A>;
 
@@ -94,6 +98,20 @@ impl<R: Reduction<A>, A: Clone> Function for ReductionFunction<R, A> {
 
     fn codomain(&self) -> Values<A> {
         Values::new()
+    }
+
+    // `f ∘ Ω` and `Ω ∘ f̄` agree on the multisets of at most one element when
+    // `f` keeps the neutral element of `Ω` (Lemma 6 of the paper; Theorem 1 is
+    // the case of a sum).
+    fn lifted_keeping_neutral(
+        &self,
+        f: &dyn Any,
+    ) -> Option<Rc<dyn Function<Domain = Self::Domain, Codomain = Self::Domain>>> {
+        let f = f.downcast_ref::<Rc<dyn Function<Domain = Values<A>, Codomain = Values<A>>>>()?;
+        if f.apply(&R::NEUTRAL) != R::NEUTRAL {
+            return None;
+        }
+        Some(Rc::new(multiset_lift(f.clone())))
     }
 }
 

@@ -208,7 +208,7 @@ pub fn where_<A>(
 /// Spreads a vector over the diagonal of a tensor of the given rank: rank two
 /// gives a diagonal matrix, rank three a tensor whose only non-zero indices
 /// are of the form `[i, i, i]`.
-pub fn diagonalize<A: Clone, U: Tensor<A>>(
+pub fn diagonalize<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static>(
     u: U,
     rank: usize,
 ) -> ReductionTensor<Sum<A>, U, Diagonal>
@@ -224,7 +224,7 @@ where
 
 /// Reducing over the empty set gives the reduction's neutral element at every
 /// index, so a constant tensor needs no underlying data at all.
-fn neutral<R: Reduction<f32>>(
+fn neutral<R: Reduction<f32> + 'static>(
     shape: Vec<usize>,
 ) -> ReductionTensor<ReductionFunction<R>, Physical, EmptyMapping> {
     let empty = EmptyMapping::new(HRect::new(shape), HRect::new(vec![0]));
@@ -266,7 +266,7 @@ pub fn eye(
 /// `indices`, and zero everywhere else. As in torch, `indices` has one row per
 /// dimension, so column `k` is the coordinate of `values[k]`, and values at a
 /// repeated coordinate add up.
-pub fn sparse_coo_tensor<A: Clone, U: Tensor<A>>(
+pub fn sparse_coo_tensor<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static>(
     indices: Vec<Vec<usize>>,
     values: U,
     size: Vec<usize>,
@@ -312,7 +312,7 @@ where
 /// `physical` sits at `basis·x + offset`, and the tensor is zero off that
 /// lattice. `basis` has a row per dimension of `shape` and a column per
 /// dimension of `physical`. Values the lattice sends to one index add up.
-pub fn sparse_latticed_tensor<A: Clone, U: Tensor<A>>(
+pub fn sparse_latticed_tensor<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static>(
     physical: U,
     basis: Vec<Vec<i64>>,
     offset: Vec<i64>,
@@ -328,7 +328,7 @@ where
     )
 }
 
-pub fn sum<A: Clone, U: Tensor<A>>(
+pub fn sum<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static>(
     input: U,
     dim: usize,
 ) -> ReductionTensor<Sum<A>, U, InvProjection>
@@ -339,7 +339,7 @@ where
     compose(Sum::new(), compose(multiset_lift(input), rows))
 }
 
-pub fn prod<A: Clone, U: Tensor<A>>(
+pub fn prod<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static>(
     input: U,
     dim: usize,
 ) -> ReductionTensor<Product<A>, U, InvProjection>
@@ -354,7 +354,7 @@ where
 /// matrices at each `[m, n, p]`.
 type Products<A> = ReductionTensor<Product<A>, Composition<JaggedTensor<A>, Concat>, InvProjection>;
 
-pub fn mm<A: Clone + 'static, U: Tensor<A> + 'static, V: Tensor<A> + 'static>(
+pub fn mm<A: Clone + PartialEq + 'static, U: Tensor<A> + 'static, V: Tensor<A> + 'static>(
     mat1: U,
     mat2: V,
 ) -> ReductionTensor<Sum<A>, Products<A>, InvProjection>
