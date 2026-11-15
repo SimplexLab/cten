@@ -8,6 +8,7 @@ pub mod index_functions;
 mod lattice;
 pub mod multiset;
 pub mod reductions;
+pub mod rewrite;
 pub mod sets;
 pub mod signature;
 pub mod tensor;
@@ -28,6 +29,7 @@ pub use reductions::{
     Inf, InfReduction, Product, ProductReduction, Reduction, ReductionFunction, Sum, SumReduction,
     Sup, SupReduction,
 };
+pub use rewrite::rewrite;
 pub use sets::{HRect, IndexSet, JaggedDomain, Multisets, Set, Values};
 pub use signature::{HRectSignature, Signature};
 pub use tensor::{JaggedTensor, Physical, ReductionTensor, Tensor};

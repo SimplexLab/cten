@@ -15,6 +15,13 @@ pub fn format_boxed<A: Display>(tensor: &dyn Tensor<A>) -> String {
     format_tensor(tensor.domain().shape(), &|index| tensor.apply(index))
 }
 
+// A tensor whose type was erased, as `rewrite` returns, prints the same way.
+impl<A: Display> Display for dyn Tensor<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format_boxed(self))
+    }
+}
+
 impl<A: Clone + Display> Display for Physical<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format_boxed(self))
@@ -25,8 +32,10 @@ impl<A: Clone + Display> Display for Physical<A> {
 // one applied last gives values that print, multisets included.
 impl<F, G> Display for Composition<F, G>
 where
-    F: Function<Domain = G::Codomain>,
-    G: Function<Domain = HRect>,
+    F: Function<Domain = G::Codomain> + 'static,
+    G: Function<Domain = HRect> + 'static,
+    F::Codomain: 'static,
+    G::Codomain: 'static,
     <F::Codomain as Set>::Owned: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

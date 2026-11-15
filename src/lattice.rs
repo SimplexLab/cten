@@ -38,6 +38,12 @@ impl Preimage {
         }
     }
 
+    /// Whether `x ↦ basis·x` is one-to-one, i.e. the basis has no integer
+    /// kernel. A kernel the box is too small to reach still counts.
+    pub(crate) fn is_injective(&self) -> bool {
+        self.h_pivots.len() == self.extents.len()
+    }
+
     /// Every index `x` of the box with `basis·x = c`.
     pub(crate) fn solve(&self, c: &[i64]) -> Vec<Vec<usize>> {
         let mut z = vec![0; self.h_pivots.len()];
